@@ -1,0 +1,93 @@
+import "diagnostics.shaft";
+import "shaft.shaft";
+import "treesitter.shaft";
+
+namespace athenactx
+{
+    def same_view(std::string::view::View left, std::string::view::View right) -> bool result
+    {
+        mut bool equal = left.length == right.length;
+        mut u64 index = 0;
+        while (equal && index < left.length)
+        {
+            if (left.data[index] != right.data[index]) { equal = false; }
+            index = index + 1;
+        }
+        tunnel equal -> bool result;
+    }
+
+    def is_shaft_path(std::string::view::View path) -> bool result
+    {
+        mut bool matches = false;
+        if (path.length >= 6)
+        {
+            matches = athenactx::same_view(path.substr(path.length - 6, 6), ".shaft");
+        }
+        tunnel matches -> bool result;
+    }
+}
+
+def main(std::string::String[] args)
+{
+    mut u64 offset = 1;
+    reserve mut std::string::view::View compiler_path = "";
+    if (args.length > 3 && athenactx::same_view(args[1].get_view(), "--compiler"))
+    {
+        compiler_path = args[2].get_view();
+        offset = 3;
+    }
+    if (args.length <= offset)
+    {
+        std::io::eprintln("Usage: athenactx scan FILE [LANGUAGE] | implementation FILE SIGNATURE [LANGUAGE] | prompt | languages");
+        exit(2);
+    }
+    reserve std::string::String command = args[offset];
+    if (athenactx::same_view(command.get_view(), "prompt"))
+    {
+        std::io::println("Use athenactx scan FILE [LANGUAGE] first. It indexes Tree-sitter syntax and diagnostics without implementation bodies. Do not read implementation bodies by default; request exact-signature implementation only to fix a concrete bug or resolve a detail the index cannot answer.");
+        terminate;
+    }
+    if (athenactx::same_view(command.get_view(), "languages"))
+    {
+        athenactx::treesitter::list_languages();
+        terminate;
+    }
+    if (args.length <= offset + 1)
+    {
+        std::io::eprintln("A source file is required.");
+        exit(2);
+    }
+    reserve std::string::String contents = std::filesystem::read(args[offset + 1].get_view());
+    reserve std::string::view::View source = contents.get_view();
+    if (athenactx::same_view(command.get_view(), "scan"))
+    {
+        reserve mut std::string::view::View language = "";
+        if (args.length > offset + 2) { language = args[offset + 2].get_view(); }
+        if (athenactx::is_shaft_path(args[offset + 1].get_view()) || athenactx::same_view(language, "shaft"))
+        {
+            if (!scan_shaft(args[offset + 1].get_view(), source, compiler_path)) { exit(2); }
+            terminate;
+        }
+        athenactx::treesitter::scan_file(args[offset + 1].get_view(), source, language);
+        terminate;
+    }
+    if (athenactx::same_view(command.get_view(), "implementation"))
+    {
+        if (args.length <= offset + 2)
+        {
+            std::io::eprintln("An exact function signature is required.");
+            exit(2);
+        }
+        reserve mut std::string::view::View language = "";
+        if (args.length > offset + 3) { language = args[offset + 3].get_view(); }
+        if (athenactx::is_shaft_path(args[offset + 1].get_view()) || athenactx::same_view(language, "shaft"))
+        {
+            implementation_shaft(source, args[offset + 2].get_view());
+            terminate;
+        }
+        athenactx::treesitter::implementation_file(args[offset + 1].get_view(), source, args[offset + 2].get_view(), language);
+        terminate;
+    }
+    std::io::eprintln("Unknown command.");
+    exit(2);
+}

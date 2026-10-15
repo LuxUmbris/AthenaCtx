@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SHAFTC=$(command -v shaftc || true)
+export PYTHONPATH="$ROOT/vendor${PYTHONPATH:+:$PYTHONPATH}"
+cd "$ROOT"
+if [ "${1:-}" = "scan" ] && [ "$#" -ge 2 ] && [ -d "$2" ]; then
+    shift
+    exec python3 "$ROOT/tools/project_cli.py" index "$@"
+fi
+case "${1:-}" in
+    index|references|rename|query|watch|capabilities|diff|lsp)
+        exec python3 "$ROOT/tools/project_cli.py" "$@"
+        ;;
+esac
+if [ -n "$SHAFTC" ]; then
+    exec "$ROOT/build/athenactx" --compiler "$SHAFTC" "$@"
+fi
+exec "$ROOT/build/athenactx" "$@"

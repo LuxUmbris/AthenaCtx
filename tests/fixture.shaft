@@ -1,0 +1,52 @@
+trait Displayable {
+    dec render(&self) -> u64 result;
+}
+
+struct User {
+    mut u64 id;
+}
+
+impl Displayable for User {
+    def render(&self) -> u64 result {
+        tunnel self.id -> u64 result;
+    }
+}
+
+def write_bytes(u64 value) -> u64 result {
+    tunnel value -> u64 result;
+}
+
+@using global DEBUG! -> bool;
+
+enum Color : u32 {
+    Red,
+    Green = 2,
+    Blue,
+}
+
+union<T> Choice {
+    Number(T),
+    Label(std::string::String),
+}
+
+@procedural derive maker($struct:target)
+    @quote
+        def generated($target value) -> u64 result { tunnel 0 -> u64 result; }
+    @end
+@end
+
+def load_user(u64 id) -> u64 result {
+    tunnel id -> u64 result;
+}
+
+def async lookup(u64 id) -> u64 result {
+    reserve u64 value = load_user(id);
+    tunnel value -> u64 result;
+}
+
+def main() {
+    u64 user = 1;
+    char brace = '}';
+    lookup(user);
+    write_bytes(user);
+}

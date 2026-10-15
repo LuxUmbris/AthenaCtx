@@ -1,0 +1,13 @@
+[package]
+name = "athenactx"
+version = "0.1.0"
+
+[build]
+entry = "src/main.shaft"
+output = "build/athenactx"
+optimization = "O3"
+hosted = false
+
+[format]
+brace_style = "allman"
+namespace_indent = true

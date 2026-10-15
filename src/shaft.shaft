@@ -1,0 +1,673 @@
+ 
+def identifier_start(u8 value) -> bool result
+    {
+        tunnel (value == 95 || (value >= 65 && value <= 90) || (value >= 97 && value <= 122)) -> bool result;
+    }
+
+    def identifier_continue(u8 value) -> bool result
+    {
+        tunnel identifier_start(value) || (value >= 48 && value <= 57) -> bool result;
+    }
+
+    def skip_space(std::string::view::View source, u64 cursor) -> u64 result
+    {
+        mut u64 position = cursor;
+        while (position < source.length && (source.data[position] == 32 || source.data[position] == 9 || source.data[position] == 10 || source.data[position] == 13))
+        {
+            position = position + 1;
+        }
+        tunnel position -> u64 result;
+    }
+
+    def word_end(std::string::view::View source, u64 begin_index) -> u64 result
+    {
+        mut u64 end_index = begin_index;
+        while (end_index < source.length && identifier_continue(source.data[end_index]))
+        {
+            end_index = end_index + 1;
+        }
+        tunnel end_index -> u64 result;
+    }
+
+    def word_equals(std::string::view::View source, u64 begin_index, u64 end_index, std::string::view::View expected) -> bool result
+    {
+        mut bool equal = end_index - begin_index == expected.length;
+        mut u64 index = 0;
+        while (equal && index < expected.length)
+        {
+            if (source.data[begin_index + index] != expected.data[index]) { equal = false; }
+            index = index + 1;
+        }
+        tunnel equal -> bool result;
+    }
+
+    def line_at(std::string::view::View source, u64 offset) -> u64 result
+    {
+        mut u64 line = 1;
+        mut u64 index = 0;
+        while (index < offset)
+        {
+            if (source.data[index] == 10)
+            {
+                line = line + 1;
+            }
+            index = index + 1;
+        }
+        tunnel line -> u64 result;
+    }
+
+    def next_code(std::string::view::View source, u64 offset) -> u64 result
+    {
+        mut u64 cursor = offset;
+        mut bool skipping = true;
+        while (skipping && cursor < source.length)
+        {
+            cursor = skip_space(source, cursor);
+            if (cursor + 1 < source.length && source.data[cursor] == 47 && source.data[cursor + 1] == 47)
+            {
+                while (cursor < source.length && source.data[cursor] != 10)
+                {
+                    cursor = cursor + 1;
+                }
+            }
+            else if (cursor + 1 < source.length && source.data[cursor] == 47 && source.data[cursor + 1] == 42)
+            {
+                cursor = cursor + 2;
+                while (cursor + 1 < source.length && !(source.data[cursor] == 42 && source.data[cursor + 1] == 47))
+                {
+                    cursor = cursor + 1;
+                }
+                if (cursor + 1 < source.length)
+                {
+                    cursor = cursor + 2;
+                }
+            }
+            else if (cursor < source.length && (source.data[cursor] == 34 || source.data[cursor] == 39))
+            {
+                mut u8 quote = source.data[cursor];
+                cursor = cursor + 1;
+                while (cursor < source.length && source.data[cursor] != quote)
+                {
+                    if (source.data[cursor] == 92 && cursor + 1 < source.length) { cursor = cursor + 1; }
+                    cursor = cursor + 1;
+                }
+                if (cursor < source.length) { cursor = cursor + 1; }
+            }
+            else
+            {
+                skipping = false;
+            }
+        }
+        tunnel cursor -> u64 result;
+    }
+
+    def trim_end(std::string::view::View source, u64 begin_index, u64 limit) -> u64 result
+    {
+        mut u64 end_index = limit;
+        while (end_index > begin_index && (source.data[end_index - 1] == 32 || source.data[end_index - 1] == 9 || source.data[end_index - 1] == 10 || source.data[end_index - 1] == 13))
+        {
+            end_index = end_index - 1;
+        }
+        tunnel end_index -> u64 result;
+    }
+
+    def views_equal(std::string::view::View left, std::string::view::View right) -> bool result
+    {
+        mut bool equal = left.length == right.length;
+        mut u64 index = 0;
+        while (equal && index < left.length)
+        {
+            if (left.data[index] != right.data[index]) { equal = false; }
+            index = index + 1;
+        }
+        tunnel equal -> bool result;
+    }
+
+    def signature_end(std::string::view::View source, u64 begin_index) -> u64 result
+    {
+        mut u64 cursor = begin_index;
+        mut u64 parens = 0;
+        mut u64 brackets = 0;
+        mut u64 angles = 0;
+        mut bool quoted = false;
+        mut bool escaped = false;
+        mut u8 quote = 0;
+        mut bool done = false;
+        while (cursor < source.length && !done)
+        {
+            mut u8 byte = source.data[cursor];
+            if (quoted)
+            {
+                if (escaped) { escaped = false; }
+                else if (byte == 92) { escaped = true; }
+                else if (byte == quote) { quoted = false; }
+            }
+            else if (byte == 34 || byte == 39) { quoted = true; quote = byte; }
+            else if (byte == 40) { parens = parens + 1; }
+            else if (byte == 41 && parens > 0) { parens = parens - 1; }
+            else if (byte == 91) { brackets = brackets + 1; }
+            else if (byte == 93 && brackets > 0) { brackets = brackets - 1; }
+            else if (byte == 60) { angles = angles + 1; }
+            else if (byte == 62 && angles > 0) { angles = angles - 1; }
+            else if ((byte == 123 || byte == 59) && parens == 0 && brackets == 0 && angles == 0)
+            {
+                done = true;
+            }
+            cursor = cursor + 1;
+        }
+        tunnel trim_end(source, begin_index, cursor - 1) -> u64 result;
+    }
+
+    def matching_brace(std::string::view::View source, u64 opening) -> u64 result
+    {
+        mut u64 depth = 1;
+        mut u64 cursor = opening + 1;
+        mut bool quoted = false;
+        mut bool escaped = false;
+        mut u8 quote = 0;
+        while (cursor < source.length && depth > 0)
+        {
+            mut u8 byte = source.data[cursor];
+            if (quoted)
+            {
+                if (escaped) { escaped = false; }
+                else if (byte == 92) { escaped = true; }
+                else if (byte == quote) { quoted = false; }
+            }
+            else if (byte == 34 || byte == 39) { quoted = true; quote = byte; }
+            else if (cursor + 1 < source.length && byte == 47 && source.data[cursor + 1] == 47)
+            {
+                while (cursor < source.length && source.data[cursor] != 10) { cursor = cursor + 1; }
+            }
+            else if (cursor + 1 < source.length && byte == 47 && source.data[cursor + 1] == 42)
+            {
+                cursor = cursor + 2;
+                while (cursor + 1 < source.length && !(source.data[cursor] == 42 && source.data[cursor + 1] == 47)) { cursor = cursor + 1; }
+                if (cursor + 1 < source.length) { cursor = cursor + 1; }
+            }
+            else if (byte == 123) { depth = depth + 1; }
+            else if (byte == 125) { depth = depth - 1; }
+            cursor = cursor + 1;
+        }
+        tunnel cursor - 1 -> u64 result;
+    }
+
+    def braces_balanced(std::string::view::View source) -> bool result
+    {
+        mut u64 depth = 0;
+        mut u64 cursor = 0;
+        mut bool well_formed = true;
+        while (cursor < source.length && well_formed)
+        {
+            cursor = next_code(source, cursor);
+            if (cursor < source.length)
+            {
+                if (source.data[cursor] == 123) { depth = depth + 1; }
+                else if (source.data[cursor] == 125)
+                {
+                    if (depth == 0) { well_formed = false; }
+                    else { depth = depth - 1; }
+                }
+                cursor = cursor + 1;
+            }
+        }
+        tunnel well_formed && depth == 0 -> bool result;
+    }
+
+    def skip_directive_block(std::string::view::View source, u64 opening) -> u64 result
+    {
+        mut u64 depth = 1;
+        mut u64 cursor = word_end(source, opening + 1);
+        while (cursor < source.length && depth > 0)
+        {
+            cursor = next_code(source, cursor);
+            if (cursor < source.length && source.data[cursor] == 64)
+            {
+                mut u64 directive_start = cursor + 1;
+                mut u64 directive_end = word_end(source, directive_start);
+                if (views_equal(source.substr(directive_start, directive_end - directive_start), "end"))
+                {
+                    depth = depth - 1;
+                }
+                else if (views_equal(source.substr(directive_start, directive_end - directive_start), "quote") ||
+                    views_equal(source.substr(directive_start, directive_end - directive_start), "prepend") ||
+                    views_equal(source.substr(directive_start, directive_end - directive_start), "for") ||
+                    views_equal(source.substr(directive_start, directive_end - directive_start), "if") ||
+                    views_equal(source.substr(directive_start, directive_end - directive_start), "comptime") ||
+                    views_equal(source.substr(directive_start, directive_end - directive_start), "unsafe") ||
+                    views_equal(source.substr(directive_start, directive_end - directive_start), "nocheck") ||
+                    views_equal(source.substr(directive_start, directive_end - directive_start), "asm") ||
+                    views_equal(source.substr(directive_start, directive_end - directive_start), "config"))
+                {
+                    depth = depth + 1;
+                }
+                cursor = directive_end;
+            }
+            else if (cursor < source.length) { cursor = cursor + 1; }
+        }
+        tunnel cursor -> u64 result;
+    }
+
+    def quote_view(std::string::view::View value) -> std::string::String result
+    {
+        tunnel std::json::quote(value) -> std::string::String result;
+    }
+
+    def call_name(std::string::view::View source, u64 begin_index, u64 end_index) -> std::string::view::View result
+    {
+        tunnel source.substr(begin_index, end_index - begin_index) -> std::string::view::View result;
+    }
+
+    def struct_fields(std::string::view::View source, u64 opening, u64 closing) -> std::string::String result
+    {
+        reserve mut std::string::String fields = std::string::String::with_capacity(64);
+        fields.append("[");
+        mut bool first = true;
+        mut u64 cursor = opening + 1;
+        while (cursor < closing)
+        {
+            cursor = next_code(source, cursor);
+            if (cursor < closing)
+            {
+                mut u64 finish = signature_end(source, cursor);
+                if (finish < closing && source.data[finish] == 59)
+                {
+                    mut u64 name_end = finish;
+                    while (name_end > cursor && !identifier_continue(source.data[name_end - 1])) { name_end = name_end - 1; }
+                    mut u64 name_start = name_end;
+                    while (name_start > cursor && identifier_continue(source.data[name_start - 1])) { name_start = name_start - 1; }
+                    if (!first) { fields.append(","); }
+                    first = false;
+                    fields.append("{\"name\":");
+                    reserve std::string::view::View name_view = call_name(source, name_start, name_end);
+                    reserve std::string::String name = quote_view(name_view);
+                    fields.append(name.get_view());
+                    fields.append(",\"signature\":");
+                    reserve std::string::view::View field_view = call_name(source, cursor, finish);
+                    reserve std::string::String signature = quote_view(field_view);
+                    fields.append(signature.get_view());
+                    fields.append(",\"line\":");
+                    reserve std::string::String line_text = std::string::String::from_u64(line_at(source, cursor));
+                    fields.append(line_text.get_view());
+                    fields.append("}");
+                    cursor = finish + 1;
+                }
+                else { cursor = cursor + 1; }
+            }
+        }
+        fields.append("]");
+        tunnel fields -> std::string::String result;
+    }
+
+    def aggregate_members(std::string::view::View source, u64 opening, u64 closing) -> std::string::String result
+    {
+        reserve mut std::string::String members = std::string::String::with_capacity(64);
+        members.append("[");
+        mut bool first = true;
+        mut u64 cursor = opening + 1;
+        while (cursor < closing)
+        {
+            cursor = next_code(source, cursor);
+            if (cursor < closing && source.data[cursor] == 44) { cursor = cursor + 1; }
+            else if (cursor < closing)
+            {
+                mut u64 member_start = cursor;
+                mut u64 parens = 0;
+                mut u64 brackets = 0;
+                mut u64 angles = 0;
+                mut bool quoted = false;
+                mut bool escaped = false;
+                mut u8 quote = 0;
+                mut bool done = false;
+                while (cursor < closing && !done)
+                {
+                    mut u8 byte = source.data[cursor];
+                    if (quoted)
+                    {
+                        if (escaped) { escaped = false; }
+                        else if (byte == 92) { escaped = true; }
+                        else if (byte == quote) { quoted = false; }
+                    }
+                    else if (byte == 34 || byte == 39) { quoted = true; quote = byte; }
+                    else if (byte == 40) { parens = parens + 1; }
+                    else if (byte == 41 && parens > 0) { parens = parens - 1; }
+                    else if (byte == 91) { brackets = brackets + 1; }
+                    else if (byte == 93 && brackets > 0) { brackets = brackets - 1; }
+                    else if (byte == 60) { angles = angles + 1; }
+                    else if (byte == 62 && angles > 0) { angles = angles - 1; }
+                    else if (byte == 44 && parens == 0 && brackets == 0 && angles == 0) { done = true; }
+                    if (!done) { cursor = cursor + 1; }
+                }
+                mut u64 member_end = trim_end(source, member_start, cursor);
+                if (member_end > member_start)
+                {
+                    mut u64 name_end = word_end(source, member_start);
+                    if (!first) { members.append(","); }
+                    first = false;
+                    members.append("{\"name\":");
+                    reserve std::string::view::View name_view = call_name(source, member_start, name_end);
+                    reserve std::string::String name = quote_view(name_view);
+                    members.append(name.get_view());
+                    members.append(",\"signature\":");
+                    reserve std::string::view::View member_view = call_name(source, member_start, member_end);
+                    reserve std::string::String signature = quote_view(member_view);
+                    members.append(signature.get_view());
+                    members.append(",\"line\":");
+                    reserve std::string::String line_text = std::string::String::from_u64(line_at(source, member_start));
+                    members.append(line_text.get_view());
+                    members.append("}");
+                }
+                if (cursor < closing) { cursor = cursor + 1; }
+            }
+        }
+        members.append("]");
+        tunnel members -> std::string::String result;
+    }
+
+    def scan_calls(std::string::view::View source, u64 begin_index, u64 finish) -> std::string::String result
+    {
+        reserve mut std::string::String output = std::string::String::with_capacity(128);
+        output.append(",\"calls\":[");
+        mut bool first = true;
+        mut bool has_effect = false;
+        mut u64 cursor = begin_index;
+        while (cursor < finish)
+        {
+            cursor = next_code(source, cursor);
+            if (cursor < finish && identifier_start(source.data[cursor]))
+            {
+                mut u64 end = word_end(source, cursor);
+                mut u64 after = skip_space(source, end);
+                if (after < finish && source.data[after] == 40 &&
+                    !word_equals(source, cursor, end, "if") && !word_equals(source, cursor, end, "while") &&
+                    !word_equals(source, cursor, end, "for") && !word_equals(source, cursor, end, "match") &&
+                    !word_equals(source, cursor, end, "sizeof"))
+                {
+                    if (!first) { output.append(","); }
+                    first = false;
+                    reserve std::string::view::View name_view = call_name(source, cursor, end);
+                    reserve std::string::String quoted_name = quote_view(name_view);
+                    output.append(quoted_name.get_view());
+                    if (word_equals(source, cursor, end, "print") || word_equals(source, cursor, end, "println") ||
+                        word_equals(source, cursor, end, "read") || word_equals(source, cursor, end, "write") ||
+                        word_equals(source, cursor, end, "read_bytes") || word_equals(source, cursor, end, "write_bytes") ||
+                        word_equals(source, cursor, end, "open") || word_equals(source, cursor, end, "close") ||
+                        word_equals(source, cursor, end, "spawn") || word_equals(source, cursor, end, "exit") ||
+                        word_equals(source, cursor, end, "allocate") || word_equals(source, cursor, end, "deallocate") ||
+                        word_equals(source, cursor, end, "push")) { has_effect = true; }
+                }
+                cursor = end;
+            }
+            else if (cursor < finish) { cursor = cursor + 1; }
+        }
+        if (has_effect) { output.append("],\"effects\":[\"io_or_external\"]"); }
+        else { output.append("],\"effects\":[]"); }
+        tunnel output -> std::string::String result;
+    }
+
+    def compiler_check(std::string::view::View compiler_path, std::string::view::View path) -> std::process::Output result
+    {
+        reserve mut std::process::Command command = std::process::Command::new(compiler_path);
+        command.arg("--check-only");
+        command.arg(path);
+        tunnel command.output() -> std::process::Output result;
+    }
+
+    def scan_shaft(std::string::view::View path, std::string::view::View source, std::string::view::View compiler_path) -> bool result
+    {
+        mut bool braces_ok = braces_balanced(source);
+        reserve mut std::process::Output compiler;
+        mut bool compiler_ok = true;
+        if (compiler_path.length > 0)
+        {
+            compiler = compiler_check(compiler_path, path);
+            compiler_ok = compiler.status == 0;
+        }
+        reserve mut std::string::String output = std::string::String::with_capacity(source.length * 3 + 256);
+        output.append("{\"file\":");
+        reserve std::string::String quoted_path = quote_view(path);
+        output.append(quoted_path.get_view());
+        output.append(",\"language\":\"shaft\",\"symbols\":[");
+        mut bool first_symbol = true;
+        mut u64 cursor = 0;
+        while (cursor < source.length && braces_ok)
+        {
+            cursor = next_code(source, cursor);
+            if (cursor >= source.length) { break; }
+            mut u64 word_start = cursor;
+            mut bool macro = false;
+            if (source.data[cursor] == 64)
+            {
+                mut u64 after_at = skip_space(source, cursor + 1);
+                mut u64 at_end = word_end(source, after_at);
+                if (views_equal(source.substr(after_at, at_end - after_at), "procedural"))
+                {
+                    mut u64 section_start = skip_space(source, at_end);
+                    mut u64 section_end = word_end(source, section_start);
+                    if (views_equal(source.substr(section_start, section_end - section_start), "derive") ||
+                        views_equal(source.substr(section_start, section_end - section_start), "attribute"))
+                    {
+                        mut u64 name_start = skip_space(source, section_end);
+                        mut u64 name_end = word_end(source, name_start);
+                        mut u64 header_end = cursor;
+                        while (header_end < source.length && source.data[header_end] != 10) { header_end = header_end + 1; }
+                        header_end = trim_end(source, cursor, header_end);
+                        if (!first_symbol) { output.append(","); }
+                        first_symbol = false;
+                        output.append("{\"kind\":\"macro\",\"name\":");
+                        reserve std::string::view::View macro_name = call_name(source, name_start, name_end);
+                        reserve std::string::String quoted_name = quote_view(macro_name);
+                        output.append(quoted_name.get_view());
+                        output.append(",\"signature\":");
+                        reserve std::string::view::View macro_signature = call_name(source, cursor, header_end);
+                        reserve std::string::String quoted_signature = quote_view(macro_signature);
+                        output.append(quoted_signature.get_view());
+                        output.append(",\"line\":");
+                        reserve std::string::String macro_line = std::string::String::from_u64(line_at(source, cursor));
+                        output.append(macro_line.get_view());
+                        output.append("}");
+                        cursor = skip_directive_block(source, cursor);
+                        continue;
+                    }
+                }
+                else if (views_equal(source.substr(after_at, at_end - after_at), "using"))
+                {
+                    macro = true;
+                    word_start = cursor;
+                    cursor = after_at;
+                }
+            }
+            if (identifier_start(source.data[cursor]))
+            {
+                mut u64 word_finish = word_end(source, cursor);
+                mut u8 kind = 0;
+                mut bool function = false;
+                mut bool body_required = false;
+                if (macro) { kind = 1; }
+                else if (word_equals(source, cursor, word_finish, "struct")) { kind = 2; body_required = true; }
+                else if (word_equals(source, cursor, word_finish, "trait")) { kind = 3; body_required = true; }
+                else if (word_equals(source, cursor, word_finish, "impl")) { kind = 4; body_required = true; }
+                else if (word_equals(source, cursor, word_finish, "enum")) { kind = 5; body_required = true; }
+                else if (word_equals(source, cursor, word_finish, "union")) { kind = 6; body_required = true; }
+                else if (word_equals(source, cursor, word_finish, "def") || word_equals(source, cursor, word_finish, "dec") ||
+                    word_equals(source, cursor, word_finish, "cdef") || word_equals(source, cursor, word_finish, "cdec"))
+                {
+                    kind = 7;
+                    function = true;
+                }
+                if (kind != 0)
+                {
+                    mut u64 header_start = word_start;
+                    mut u64 header_end = signature_end(source, cursor);
+                    mut u64 delimiter = header_end;
+                    if (delimiter < source.length && source.data[delimiter] != 123 && source.data[delimiter] != 59)
+                    {
+                        delimiter = skip_space(source, delimiter);
+                    }
+                    mut u64 name_start = skip_space(source, word_end(source, cursor));
+                    if (kind == 6 && name_start < source.length && source.data[name_start] == 60)
+                    {
+                        mut u64 generic_depth = 1;
+                        name_start = name_start + 1;
+                        while (name_start < source.length && generic_depth > 0)
+                        {
+                            if (source.data[name_start] == 60) { generic_depth = generic_depth + 1; }
+                            else if (source.data[name_start] == 62) { generic_depth = generic_depth - 1; }
+                            name_start = name_start + 1;
+                        }
+                        name_start = skip_space(source, name_start);
+                    }
+                    if (function && views_equal(source.substr(name_start, word_end(source, name_start) - name_start), "async"))
+                    {
+                        name_start = skip_space(source, word_end(source, name_start));
+                    }
+                    if (macro)
+                    {
+                        mut u64 scope_end = word_end(source, name_start);
+                        if (views_equal(source.substr(name_start, scope_end - name_start), "global"))
+                        {
+                            name_start = skip_space(source, scope_end);
+                        }
+                    }
+                    mut u64 name_end = word_end(source, name_start);
+                    if (!first_symbol) { output.append(","); }
+                    first_symbol = false;
+                    output.append("{\"kind\":");
+                    if (kind == 1) { output.append("\"macro\""); }
+                    else if (kind == 2) { output.append("\"struct\""); }
+                    else if (kind == 3) { output.append("\"trait\""); }
+                    else if (kind == 4) { output.append("\"impl\""); }
+                    else if (kind == 5) { output.append("\"enum\""); }
+                    else if (kind == 6) { output.append("\"union\""); }
+                    else { output.append("\"function\""); }
+                    output.append(",\"name\":");
+                    if (kind == 4)
+                    {
+                        reserve std::string::view::View name_view = call_name(source, name_start, header_end);
+                        reserve std::string::String quoted_name = quote_view(name_view);
+                        output.append(quoted_name.get_view());
+                    }
+                    else
+                    {
+                        reserve std::string::view::View name_view = call_name(source, name_start, name_end);
+                        reserve std::string::String quoted_name = quote_view(name_view);
+                        output.append(quoted_name.get_view());
+                    }
+                    output.append(",\"signature\":");
+                    reserve std::string::view::View signature_view = call_name(source, header_start, header_end);
+                    reserve std::string::String quoted_signature = quote_view(signature_view);
+                    output.append(quoted_signature.get_view());
+                    output.append(",\"line\":");
+                    reserve std::string::String line_text = std::string::String::from_u64(line_at(source, header_start));
+                    output.append(line_text.get_view());
+                    if (kind == 2 && delimiter < source.length && source.data[delimiter] == 123)
+                    {
+                        mut u64 close = matching_brace(source, delimiter);
+                        output.append(",\"fields\":");
+                        reserve std::string::String fields = struct_fields(source, delimiter, close);
+                        output.append(fields.get_view());
+                    }
+                    if ((kind == 5 || kind == 6) && delimiter < source.length && source.data[delimiter] == 123)
+                    {
+                        mut u64 close = matching_brace(source, delimiter);
+                        output.append(",\"members\":");
+                        reserve std::string::String members = aggregate_members(source, delimiter, close);
+                        output.append(members.get_view());
+                    }
+                    if (function && delimiter < source.length && source.data[delimiter] == 123)
+                    {
+                        mut u64 close = matching_brace(source, delimiter);
+                        reserve std::string::String call_data = scan_calls(source, delimiter + 1, close);
+                        output.append(call_data.get_view());
+                        output.append("}");
+                        cursor = close + 1;
+                        continue;
+                    }
+                    else
+                    {
+                        output.append("}");
+                    }
+                    if (kind == 2 || kind == 5 || kind == 6)
+                    {
+                        if (delimiter < source.length && source.data[delimiter] == 123 && body_required)
+                        {
+                            cursor = matching_brace(source, delimiter) + 1;
+                            continue;
+                        }
+                    }
+                }
+                cursor = word_finish;
+            }
+            else
+            {
+                cursor = cursor + 1;
+            }
+        }
+        output.append("],\"diagnostics\":[");
+        mut bool first_diagnostic = true;
+        if (!braces_ok)
+        {
+            reserve std::string::String diagnostic = athenactx::diagnostics::json_raw_error("unclosed or unmatched brace in source file");
+            output.append(diagnostic.get_view());
+            first_diagnostic = false;
+        }
+        if (!compiler_ok)
+        {
+            if (!first_diagnostic) { output.append(","); }
+            reserve std::string::String diagnostic = athenactx::diagnostics::json_raw_error(compiler.stderr.get_view());
+            output.append(diagnostic.get_view());
+        }
+        output.append("]}");
+        std::io::println(output.get_view());
+        tunnel braces_ok && compiler_ok -> bool result;
+    }
+
+    def implementation_shaft(std::string::view::View source, std::string::view::View requested)
+    {
+        mut u64 cursor = 0;
+        mut bool found = false;
+        reserve mut std::string::String output = std::string::String::with_capacity(256);
+        while (cursor < source.length && !found)
+        {
+            cursor = next_code(source, cursor);
+            if (cursor < source.length && identifier_start(source.data[cursor]))
+            {
+                mut u64 begin_index = cursor;
+                mut u64 end = word_end(source, cursor);
+                if (word_equals(source, cursor, end, "def") || word_equals(source, cursor, end, "cdef"))
+                {
+                    mut u64 signature_finish = signature_end(source, begin_index);
+                    reserve std::string::view::View signature = source.substr(begin_index, signature_finish - begin_index);
+                    if (views_equal(signature, requested))
+                    {
+                        mut u64 opening = skip_space(source, signature_finish);
+                        if (opening < source.length && source.data[opening] == 123)
+                        {
+                            mut u64 closing = matching_brace(source, opening);
+                            mut std::string::view::View body = source.substr(opening, closing - opening + 1);
+                            output.append(body);
+                            found = true;
+                        }
+                    }
+                    if (!found)
+                    {
+                        mut u64 opening = skip_space(source, signature_finish);
+                        if (opening < source.length && source.data[opening] == 123)
+                        {
+                            cursor = matching_brace(source, opening) + 1;
+                        }
+                        else { cursor = end; }
+                    }
+                }
+                else { cursor = end; }
+            }
+            else if (cursor < source.length) { cursor = cursor + 1; }
+        }
+        if (!found)
+        {
+            std::io::eprintln("No definition matched that exact signature.");
+            exit(2);
+        }
+        std::io::println(output.get_view());
+    }
+

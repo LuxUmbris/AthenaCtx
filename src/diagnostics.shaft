@@ -1,0 +1,31 @@
+namespace athenactx
+{
+    namespace diagnostics
+    {
+        def json_error(std::string::view::View message, u64 line, u64 column) -> std::string::String result
+        {
+            reserve mut std::string::String output = std::string::String::with_capacity(message.length + 80);
+            output.append("{\"severity\":\"error\",\"message\":");
+            reserve std::string::String encoded = std::json::quote(message);
+            output.append(encoded.get_view());
+            output.append(",\"line\":");
+            reserve std::string::String line_text = std::string::String::from_u64(line);
+            output.append(line_text.get_view());
+            output.append(",\"column\":");
+            reserve std::string::String column_text = std::string::String::from_u64(column);
+            output.append(column_text.get_view());
+            output.append("}");
+            tunnel output -> std::string::String result;
+        }
+
+        def json_raw_error(std::string::view::View message) -> std::string::String result
+        {
+            reserve mut std::string::String output = std::string::String::with_capacity(message.length + 40);
+            output.append("{\"severity\":\"error\",\"message\":");
+            reserve std::string::String encoded = std::json::quote(message);
+            output.append(encoded.get_view());
+            output.append("}");
+            tunnel output -> std::string::String result;
+        }
+    }
+}

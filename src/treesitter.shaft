@@ -1,0 +1,485 @@
+namespace athenactx
+{
+    namespace treesitter
+    {
+        def view_equal(std::string::view::View left, std::string::view::View right) -> bool result
+        {
+            mut bool equal = left.length == right.length;
+            mut u64 index = 0;
+            while (equal && index < left.length)
+            {
+                if (left.data[index] != right.data[index]) { equal = false; }
+                index = index + 1;
+            }
+            tunnel equal -> bool result;
+        }
+
+        def view_contains(std::string::view::View value, std::string::view::View query) -> bool result
+        {
+            mut bool found = false;
+            mut u64 offset = 0;
+            while (!found && offset + query.length <= value.length)
+            {
+                mut bool equal = true;
+                mut u64 index = 0;
+                while (equal && index < query.length)
+                {
+                    if (value.data[offset + index] != query.data[index]) { equal = false; }
+                    index = index + 1;
+                }
+                if (equal) { found = true; }
+                offset = offset + 1;
+            }
+            tunnel found -> bool result;
+        }
+
+        def field_at(std::string::view::View row, u64 wanted) -> std::string::view::View result
+        {
+            mut u64 field = 0;
+            mut u64 start_index = 0;
+            mut u64 index = 0;
+            while (index <= row.length && field < wanted)
+            {
+                if (index == row.length || row.data[index] == 9)
+                {
+                    field = field + 1;
+                    start_index = index + 1;
+                }
+                index = index + 1;
+            }
+            mut u64 finish = start_index;
+            while (finish < row.length && row.data[finish] != 9) { finish = finish + 1; }
+            tunnel row.substr(start_index, finish - start_index) -> std::string::view::View result;
+        }
+
+        def parse_uint(std::string::view::View digits) -> u64 result
+        {
+            mut u64 number = 0;
+            if (digits.length > 0 && digits.data[0] != 45)
+            {
+                mut u64 index = 0;
+                while (index < digits.length)
+                {
+                    mut u8 byte = digits.data[index];
+                    if (byte >= 48 && byte <= 57) { number = number * 10 + byte - 48; }
+                    index = index + 1;
+                }
+            }
+            tunnel number -> u64 result;
+        }
+
+        def quote_view(std::string::view::View value) -> std::string::String result
+        {
+            tunnel std::json::quote(value) -> std::string::String result;
+        }
+
+        def node_kind(std::string::view::View type) -> u8 result
+        {
+            mut u8 kind = 0;
+            if (athenactx::treesitter::view_equal(type, "function_definition") || athenactx::treesitter::view_equal(type, "function_declaration") ||
+                athenactx::treesitter::view_equal(type, "function_item") || athenactx::treesitter::view_equal(type, "function_signature_item") ||
+                athenactx::treesitter::view_equal(type, "method_definition") || athenactx::treesitter::view_equal(type, "method_declaration") ||
+                athenactx::treesitter::view_equal(type, "constructor_declaration") || athenactx::treesitter::view_equal(type, "function") || athenactx::treesitter::view_equal(type, "method")) { kind = 1; }
+            else if (athenactx::treesitter::view_equal(type, "class_definition") || athenactx::treesitter::view_equal(type, "class_declaration") ||
+                athenactx::treesitter::view_equal(type, "class_specifier") || athenactx::treesitter::view_equal(type, "class")) { kind = 2; }
+            else if (athenactx::treesitter::view_equal(type, "struct_item") || athenactx::treesitter::view_equal(type, "struct_declaration") ||
+                athenactx::treesitter::view_equal(type, "struct_specifier") || athenactx::treesitter::view_equal(type, "struct_definition") || athenactx::treesitter::view_equal(type, "struct")) { kind = 3; }
+            else if (athenactx::treesitter::view_equal(type, "trait_item") || athenactx::treesitter::view_equal(type, "interface_declaration") || athenactx::treesitter::view_equal(type, "interface")) { kind = 4; }
+            else if (athenactx::treesitter::view_equal(type, "impl_item") || athenactx::treesitter::view_equal(type, "impl_definition")) { kind = 5; }
+            else if (athenactx::treesitter::view_equal(type, "enum_item") || athenactx::treesitter::view_equal(type, "enum_declaration") || athenactx::treesitter::view_equal(type, "enum_specifier")) { kind = 6; }
+            else if (athenactx::treesitter::view_equal(type, "union_item") || athenactx::treesitter::view_equal(type, "union_declaration") ||
+                athenactx::treesitter::view_equal(type, "union_specifier") || athenactx::treesitter::view_equal(type, "union_definition")) { kind = 7; }
+            else if (athenactx::treesitter::view_equal(type, "macro_definition") || athenactx::treesitter::view_equal(type, "macro_declaration") || athenactx::treesitter::view_equal(type, "macro_rule")) { kind = 8; }
+            else if (athenactx::treesitter::view_equal(type, "enum_variant") || athenactx::treesitter::view_equal(type, "enumerator") || athenactx::treesitter::view_equal(type, "enum_member")) { kind = 9; }
+            else if (athenactx::treesitter::view_equal(type, "union_variant") || athenactx::treesitter::view_equal(type, "variant")) { kind = 10; }
+            else if (athenactx::treesitter::view_equal(type, "field_declaration") || athenactx::treesitter::view_equal(type, "field_definition") || athenactx::treesitter::view_equal(type, "property_declaration")) { kind = 11; }
+            else if (athenactx::treesitter::view_contains(type, "enum") &&
+                (athenactx::treesitter::view_contains(type, "variant") || athenactx::treesitter::view_contains(type, "member") || athenactx::treesitter::view_contains(type, "enumerator")) &&
+                !athenactx::treesitter::view_contains(type, "list")) { kind = 9; }
+            else if (athenactx::treesitter::view_contains(type, "union") && athenactx::treesitter::view_contains(type, "variant") &&
+                !athenactx::treesitter::view_contains(type, "list")) { kind = 10; }
+            else if ((athenactx::treesitter::view_contains(type, "field") || athenactx::treesitter::view_contains(type, "property")) &&
+                (athenactx::treesitter::view_contains(type, "declaration") || athenactx::treesitter::view_contains(type, "definition") ||
+                    athenactx::treesitter::view_contains(type, "member")) && !athenactx::treesitter::view_contains(type, "list")) { kind = 11; }
+            else if ((athenactx::treesitter::view_contains(type, "function") || athenactx::treesitter::view_contains(type, "method") ||
+                athenactx::treesitter::view_contains(type, "procedure") || athenactx::treesitter::view_contains(type, "subroutine")) &&
+                !athenactx::treesitter::view_contains(type, "call") && !athenactx::treesitter::view_contains(type, "type")) { kind = 1; }
+            else if (athenactx::treesitter::view_contains(type, "interface") || athenactx::treesitter::view_contains(type, "trait")) { kind = 4; }
+            else if (athenactx::treesitter::view_contains(type, "struct") && !athenactx::treesitter::view_contains(type, "field") &&
+                !athenactx::treesitter::view_contains(type, "list") && !athenactx::treesitter::view_contains(type, "body")) { kind = 3; }
+            else if (athenactx::treesitter::view_contains(type, "union") && !athenactx::treesitter::view_contains(type, "list") &&
+                !athenactx::treesitter::view_contains(type, "variant") && !athenactx::treesitter::view_contains(type, "field")) { kind = 7; }
+            else if (athenactx::treesitter::view_contains(type, "enum") && !athenactx::treesitter::view_contains(type, "list") &&
+                !athenactx::treesitter::view_contains(type, "variant") && !athenactx::treesitter::view_contains(type, "member") &&
+                !athenactx::treesitter::view_contains(type, "enumerator")) { kind = 6; }
+            else if (athenactx::treesitter::view_contains(type, "class") && !athenactx::treesitter::view_contains(type, "body") &&
+                !athenactx::treesitter::view_contains(type, "list")) { kind = 2; }
+            else if (athenactx::treesitter::view_contains(type, "macro") && !athenactx::treesitter::view_contains(type, "call") && !athenactx::treesitter::view_contains(type, "invocation")) { kind = 8; }
+            tunnel kind -> u8 result;
+        }
+
+        def is_call(std::string::view::View type) -> bool result
+        {
+            tunnel athenactx::treesitter::view_equal(type, "call_expression") || athenactx::treesitter::view_equal(type, "call") ||
+                athenactx::treesitter::view_equal(type, "function_call") || athenactx::treesitter::view_equal(type, "method_invocation") ||
+                athenactx::treesitter::view_equal(type, "invocation") || athenactx::treesitter::view_equal(type, "command") ||
+                athenactx::treesitter::view_equal(type, "command_invocation") || athenactx::treesitter::view_contains(type, "call") ||
+                athenactx::treesitter::view_contains(type, "invocation") -> bool result;
+        }
+
+        def tag_kind(std::string::view::View tag, std::string::view::View type) -> u8 result
+        {
+            mut u8 kind = athenactx::treesitter::node_kind(type);
+            if (athenactx::treesitter::view_equal(tag, "definition.function") ||
+                athenactx::treesitter::view_equal(tag, "definition.method")) { kind = 1; }
+            else if (athenactx::treesitter::view_equal(tag, "definition.interface")) { kind = 4; }
+            else if (athenactx::treesitter::view_equal(tag, "definition.macro")) { kind = 8; }
+            else if (athenactx::treesitter::view_equal(tag, "definition.constant")) { kind = 12; }
+            else if (athenactx::treesitter::view_equal(tag, "definition.type")) { kind = 13; }
+            else if (athenactx::treesitter::view_equal(tag, "definition.module")) { kind = 14; }
+            tunnel kind -> u8 result;
+        }
+
+        def has_effect(std::string::view::View name) -> bool result
+        {
+            tunnel athenactx::treesitter::view_equal(name, "print") || athenactx::treesitter::view_equal(name, "println") || athenactx::treesitter::view_equal(name, "printf") || athenactx::treesitter::view_equal(name, "read") ||
+                athenactx::treesitter::view_equal(name, "write") || athenactx::treesitter::view_equal(name, "open") || athenactx::treesitter::view_equal(name, "close") ||
+                athenactx::treesitter::view_equal(name, "spawn") || athenactx::treesitter::view_equal(name, "exit") || athenactx::treesitter::view_equal(name, "allocate") ||
+                athenactx::treesitter::view_equal(name, "deallocate") || athenactx::treesitter::view_equal(name, "push") -> bool result;
+        }
+
+        def run_bridge(std::string::view::View path, std::string::view::View language) -> std::process::Output result
+        {
+            reserve mut std::process::Command command = std::process::Command::new("/usr/bin/python3");
+            command.arg("-c");
+            command.arg("import runpy,sys;sys.path.insert(0,'vendor');p='tools/treesitter_bridge.py';sys.argv=[p]+sys.argv[2:];runpy.run_path(p,run_name='__main__')");
+            command.arg("tools/treesitter_bridge.py");
+            command.arg(path);
+            command.arg(language);
+            tunnel command.output() -> std::process::Output result;
+        }
+
+        def append_process_error(std::string::view::View path, std::string::view::View message)
+        {
+            reserve mut std::string::String output = std::string::String::with_capacity(message.length + 128);
+            output.append("{\"file\":");
+            reserve std::string::String encoded_path = athenactx::treesitter::quote_view(path);
+            output.append(encoded_path.get_view());
+            output.append(",\"language\":\"unknown\",\"symbols\":[],\"calls\":[],\"effects\":[],\"syntax\":[],\"diagnostics\":[");
+            reserve std::string::String diagnostic = athenactx::diagnostics::json_error(message, 1, 1);
+            output.append(diagnostic.get_view());
+            output.append("]}");
+            std::io::println(output.get_view());
+        }
+
+        def node_diagnostic(std::string::view::View type, bool missing, u64 line, u64 column) -> std::string::String result
+        {
+            reserve mut std::string::String message = std::string::String::with_capacity(type.length + 40);
+            if (missing) { message.append("missing syntax node: "); }
+            else { message.append("Tree-sitter syntax error at node: "); }
+            message.append(type);
+            tunnel athenactx::diagnostics::json_error(message.get_view(), line, column) -> std::string::String result;
+        }
+
+        def scan_file(std::string::view::View path, std::string::view::View source, std::string::view::View requested_language)
+        {
+            reserve std::process::Output parsed = athenactx::treesitter::run_bridge(path, requested_language);
+            if (parsed.status != 0)
+            {
+                athenactx::treesitter::append_process_error(path, parsed.stderr.get_view());
+                exit(2);
+            }
+            reserve std::string::view::View records = parsed.stdout.get_view();
+            reserve mut std::string::String symbols = std::string::String::with_capacity(256);
+            reserve mut std::string::String calls = std::string::String::with_capacity(128);
+            reserve mut std::string::String effects = std::string::String::with_capacity(128);
+            reserve mut std::string::String syntax = std::string::String::with_capacity(records.length * 2);
+            reserve mut std::string::String diagnostics = std::string::String::with_capacity(128);
+            mut bool first_symbol = true;
+            mut bool first_call = true;
+            mut bool first_effect = true;
+            mut bool first_syntax = true;
+            mut bool first_diagnostic = true;
+            mut std::string::view::View language = "unknown";
+            mut bool tags_available = false;
+            mut u64 cursor = 0;
+            while (cursor < records.length)
+            {
+                mut u64 row_start_index = cursor;
+                while (cursor < records.length && records.data[cursor] != 10) { cursor = cursor + 1; }
+                mut std::string::view::View row = records.substr(row_start_index, cursor - row_start_index);
+                cursor = cursor + 1;
+                if (row.length > 0 && athenactx::treesitter::view_equal(athenactx::treesitter::field_at(row, 0), "M"))
+                {
+                    language = athenactx::treesitter::field_at(row, 1);
+                    tags_available = athenactx::treesitter::view_equal(athenactx::treesitter::field_at(row, 2), "1");
+                }
+                else if (row.length > 0 && athenactx::treesitter::view_equal(athenactx::treesitter::field_at(row, 0), "N"))
+                {
+                    reserve std::string::view::View type = athenactx::treesitter::field_at(row, 2);
+                    mut u64 start_index_byte = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 3));
+                    mut u64 end_byte = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 4));
+                    mut u64 line = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 5));
+                    mut u64 column = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 6));
+                    mut u64 name_start_index = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 8));
+                    mut u64 name_end = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 9));
+                    mut u64 body_start_index = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 10));
+                    mut u64 body_end = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 11));
+                    mut u64 callee_start_index = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 12));
+                    mut u64 callee_end = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 13));
+                    mut bool is_error = athenactx::treesitter::view_equal(athenactx::treesitter::field_at(row, 14), "1");
+                    mut bool is_missing = athenactx::treesitter::view_equal(athenactx::treesitter::field_at(row, 15), "1");
+                    mut bool is_named = athenactx::treesitter::view_equal(athenactx::treesitter::field_at(row, 17), "1");
+                    if (is_named)
+                    {
+                        if (!first_syntax) { syntax.append(","); }
+                        first_syntax = false;
+                        syntax.append("{\"type\":");
+                        reserve std::string::String encoded_type = athenactx::treesitter::quote_view(type);
+                        syntax.append(encoded_type.get_view());
+                        syntax.append(",\"line\":");
+                        reserve std::string::String line_text = std::string::String::from_u64(line);
+                        syntax.append(line_text.get_view());
+                        syntax.append(",\"column\":");
+                        reserve std::string::String column_text = std::string::String::from_u64(column);
+                        syntax.append(column_text.get_view());
+                        syntax.append(",\"depth\":");
+                        reserve std::string::String depth_text = std::string::String::from_u64(athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 1)));
+                        syntax.append(depth_text.get_view());
+                        syntax.append(",\"start_byte\":");
+                        reserve std::string::String byte_start_text = std::string::String::from_u64(start_index_byte);
+                        syntax.append(byte_start_text.get_view());
+                        syntax.append(",\"end_byte\":");
+                        reserve std::string::String byte_end_text = std::string::String::from_u64(end_byte);
+                        syntax.append(byte_end_text.get_view());
+                        reserve std::string::view::View field = athenactx::treesitter::field_at(row, 7);
+                        if (field.length > 0)
+                        {
+                            syntax.append(",\"field\":");
+                            reserve std::string::String encoded_field = athenactx::treesitter::quote_view(field);
+                            syntax.append(encoded_field.get_view());
+                        }
+                        syntax.append("}");
+                    }
+                    mut u8 kind = athenactx::treesitter::node_kind(type);
+                    if (kind > 0 && (!tags_available || kind >= 9) && name_end > name_start_index && name_end <= source.length)
+                    {
+                        if (!first_symbol) { symbols.append(","); }
+                        first_symbol = false;
+                        symbols.append("{\"kind\":");
+                        if (kind == 1) { symbols.append("\"function\""); }
+                        else if (kind == 2) { symbols.append("\"class\""); }
+                        else if (kind == 3) { symbols.append("\"struct\""); }
+                        else if (kind == 4) { symbols.append("\"trait\""); }
+                        else if (kind == 5) { symbols.append("\"impl\""); }
+                        else if (kind == 6) { symbols.append("\"enum\""); }
+                        else if (kind == 7) { symbols.append("\"union\""); }
+                        else if (kind == 8) { symbols.append("\"macro\""); }
+                        else if (kind == 9) { symbols.append("\"enum_member\""); }
+                        else if (kind == 10) { symbols.append("\"union_variant\""); }
+                        else { symbols.append("\"field\""); }
+                        symbols.append(",\"name\":");
+                        reserve std::string::String encoded_name = athenactx::treesitter::quote_view(source.substr(name_start_index, name_end - name_start_index));
+                        symbols.append(encoded_name.get_view());
+                        symbols.append(",\"line\":");
+                        reserve std::string::String symbol_line = std::string::String::from_u64(line);
+                        symbols.append(symbol_line.get_view());
+                        if (kind >= 9)
+                        {
+                            reserve std::string::view::View container = athenactx::treesitter::field_at(row, 18);
+                            if (container.length > 0)
+                            {
+                                symbols.append(",\"container\":");
+                                reserve std::string::String encoded_container = athenactx::treesitter::quote_view(container);
+                                symbols.append(encoded_container.get_view());
+                            }
+                        }
+                        mut u64 signature_end = end_byte;
+                        if (body_start_index >= start_index_byte && body_start_index > 0) { signature_end = body_start_index; }
+                        while (signature_end > start_index_byte && (source.data[signature_end - 1] == 32 || source.data[signature_end - 1] == 9 || source.data[signature_end - 1] == 10 || source.data[signature_end - 1] == 13))
+                        {
+                            signature_end = signature_end - 1;
+                        }
+                        if (signature_end >= start_index_byte && signature_end <= source.length)
+                        {
+                            symbols.append(",\"signature\":");
+                            reserve std::string::String encoded_signature = athenactx::treesitter::quote_view(source.substr(start_index_byte, signature_end - start_index_byte));
+                            symbols.append(encoded_signature.get_view());
+                        }
+                        symbols.append("}");
+                    }
+                    if (athenactx::treesitter::is_call(type) && callee_end > callee_start_index && callee_end <= source.length)
+                    {
+                        reserve std::string::view::View callee = source.substr(callee_start_index, callee_end - callee_start_index);
+                        if (!first_call) { calls.append(","); }
+                        first_call = false;
+                        calls.append("{\"name\":");
+                        reserve std::string::String encoded_callee = athenactx::treesitter::quote_view(callee);
+                        calls.append(encoded_callee.get_view());
+                        calls.append(",\"caller\":");
+                        reserve std::string::String encoded_owner = athenactx::treesitter::quote_view(athenactx::treesitter::field_at(row, 16));
+                        calls.append(encoded_owner.get_view());
+                        calls.append(",\"line\":");
+                        reserve std::string::String call_line = std::string::String::from_u64(line);
+                        calls.append(call_line.get_view());
+                        calls.append("}");
+                        if (athenactx::treesitter::has_effect(callee))
+                        {
+                            if (!first_effect) { effects.append(","); }
+                            first_effect = false;
+                            effects.append("{\"caller\":");
+                            effects.append(encoded_owner.get_view());
+                            effects.append(",\"effect\":\"io_or_external\",\"via\":");
+                            effects.append(encoded_callee.get_view());
+                            effects.append("}");
+                        }
+                    }
+                    if (is_error || is_missing)
+                    {
+                        if (!first_diagnostic) { diagnostics.append(","); }
+                        first_diagnostic = false;
+                        reserve std::string::String diagnostic = athenactx::treesitter::node_diagnostic(type, is_missing, line, column);
+                        diagnostics.append(diagnostic.get_view());
+                    }
+                }
+                else if (athenactx::treesitter::view_equal(athenactx::treesitter::field_at(row, 0), "T"))
+                {
+                    reserve std::string::view::View tag = athenactx::treesitter::field_at(row, 1);
+                    reserve std::string::view::View type = athenactx::treesitter::field_at(row, 9);
+                    mut u8 kind = athenactx::treesitter::tag_kind(tag, type);
+                    mut u64 start_index_byte = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 2));
+                    mut u64 end_byte = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 3));
+                    mut u64 line = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 4));
+                    mut u64 name_start_index = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 6));
+                    mut u64 name_end = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 7));
+                    mut u64 body_start_index = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 8));
+                    if (kind > 0 && (kind < 9 || kind > 11) && name_end > name_start_index && name_end <= source.length)
+                    {
+                        if (!first_symbol) { symbols.append(","); }
+                        first_symbol = false;
+                        symbols.append("{\"kind\":");
+                        if (kind == 1) { symbols.append("\"function\""); }
+                        else if (kind == 2) { symbols.append("\"class\""); }
+                        else if (kind == 3) { symbols.append("\"struct\""); }
+                        else if (kind == 4) { symbols.append("\"trait\""); }
+                        else if (kind == 5) { symbols.append("\"impl\""); }
+                        else if (kind == 6) { symbols.append("\"enum\""); }
+                        else if (kind == 7) { symbols.append("\"union\""); }
+                        else if (kind == 8) { symbols.append("\"macro\""); }
+                        else if (kind == 12) { symbols.append("\"constant\""); }
+                        else if (kind == 13) { symbols.append("\"type\""); }
+                        else { symbols.append("\"module\""); }
+                        symbols.append(",\"name\":");
+                        reserve std::string::String encoded_name = athenactx::treesitter::quote_view(source.substr(name_start_index, name_end - name_start_index));
+                        symbols.append(encoded_name.get_view());
+                        symbols.append(",\"line\":");
+                        reserve std::string::String symbol_line = std::string::String::from_u64(line);
+                        symbols.append(symbol_line.get_view());
+                        mut u64 signature_end = end_byte;
+                        if (body_start_index > start_index_byte) { signature_end = body_start_index; }
+                        while (signature_end > start_index_byte && (source.data[signature_end - 1] == 32 || source.data[signature_end - 1] == 9 || source.data[signature_end - 1] == 10 || source.data[signature_end - 1] == 13))
+                        {
+                            signature_end = signature_end - 1;
+                        }
+                        if (signature_end >= start_index_byte && signature_end <= source.length)
+                        {
+                            symbols.append(",\"signature\":");
+                            reserve std::string::String encoded_signature = athenactx::treesitter::quote_view(source.substr(start_index_byte, signature_end - start_index_byte));
+                            symbols.append(encoded_signature.get_view());
+                        }
+                        symbols.append("}");
+                    }
+                }
+            }
+            reserve mut std::string::String report = std::string::String::with_capacity(records.length * 2 + 256);
+            report.append("{\"file\":");
+            reserve std::string::String encoded_path = athenactx::treesitter::quote_view(path);
+            report.append(encoded_path.get_view());
+            report.append(",\"language\":");
+            reserve std::string::String encoded_language = athenactx::treesitter::quote_view(language);
+            report.append(encoded_language.get_view());
+            report.append(",\"symbols\":[");
+            report.append(symbols.get_view());
+            report.append("],\"calls\":[");
+            report.append(calls.get_view());
+            report.append("],\"effects\":[");
+            report.append(effects.get_view());
+            report.append("],\"diagnostics\":[");
+            report.append(diagnostics.get_view());
+            report.append("],\"syntax\":[");
+            report.append(syntax.get_view());
+            report.append("]}");
+            std::io::println(report.get_view());
+        }
+
+        def implementation_file(std::string::view::View path, std::string::view::View source, std::string::view::View requested_signature, std::string::view::View language)
+        {
+            reserve std::process::Output parsed = athenactx::treesitter::run_bridge(path, language);
+            if (parsed.status == 0)
+            {
+                reserve std::string::view::View records = parsed.stdout.get_view();
+                mut u64 cursor = 0;
+                while (cursor < records.length)
+                {
+                    mut u64 row_start_index = cursor;
+                    while (cursor < records.length && records.data[cursor] != 10) { cursor = cursor + 1; }
+                    reserve std::string::view::View row = records.substr(row_start_index, cursor - row_start_index);
+                    cursor = cursor + 1;
+                    mut bool is_function = false;
+                    mut u64 start_index_byte = 0;
+                    mut u64 end_byte = 0;
+                    mut u64 body_start_index = 0;
+                    if (athenactx::treesitter::view_equal(athenactx::treesitter::field_at(row, 0), "N"))
+                    {
+                        is_function = athenactx::treesitter::node_kind(athenactx::treesitter::field_at(row, 2)) == 1;
+                        start_index_byte = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 3));
+                        end_byte = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 4));
+                        body_start_index = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 10));
+                    }
+                    else if (athenactx::treesitter::view_equal(athenactx::treesitter::field_at(row, 0), "T"))
+                    {
+                        is_function = athenactx::treesitter::tag_kind(athenactx::treesitter::field_at(row, 1), athenactx::treesitter::field_at(row, 9)) == 1;
+                        start_index_byte = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 2));
+                        end_byte = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 3));
+                        body_start_index = athenactx::treesitter::parse_uint(athenactx::treesitter::field_at(row, 8));
+                    }
+                    if (is_function)
+                    {
+                        mut u64 signature_end = body_start_index;
+                        while (signature_end > start_index_byte && (source.data[signature_end - 1] == 32 || source.data[signature_end - 1] == 9 || source.data[signature_end - 1] == 10 || source.data[signature_end - 1] == 13))
+                        {
+                            signature_end = signature_end - 1;
+                        }
+                        if (signature_end > start_index_byte && signature_end <= end_byte && end_byte <= source.length)
+                        {
+                            reserve std::string::view::View candidate = source.substr(start_index_byte, signature_end - start_index_byte);
+                            if (athenactx::treesitter::view_equal(candidate, requested_signature))
+                            {
+                                std::io::println(source.substr(start_index_byte, end_byte - start_index_byte));
+                                terminate;
+                            }
+                        }
+                    }
+                }
+            }
+            std::io::eprintln("No definition matched that exact signature.");
+            exit(2);
+        }
+
+        def list_languages()
+        {
+            reserve mut std::process::Command command = std::process::Command::new("/usr/bin/python3");
+            command.arg("-c");
+            command.arg("import runpy,sys;sys.path.insert(0,'vendor');p='tools/treesitter_bridge.py';sys.argv=[p]+sys.argv[2:];runpy.run_path(p,run_name='__main__')");
+            command.arg("tools/treesitter_bridge.py");
+            command.arg("--list");
+            reserve std::process::Output listed = command.output();
+            if (listed.status != 0)
+            {
+                std::io::eprintln(listed.stderr.get_view());
+                exit(2);
+            }
+            std::io::print(listed.stdout.get_view());
+        }
+    }
+}
