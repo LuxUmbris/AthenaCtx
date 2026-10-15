@@ -1,6 +1,6 @@
 # AthenaCTX
 
-AthenaCTX is a multi-language source indexer with a Shaft CLI and language-specific analyzers.
+AthenaCTX is a multi-language source indexer with a [Shaft](https://github.com/LuxUmbris/Shaft/tree/beta-0.3-bootstrap) CLI and language-specific analyzers.
 
 ## Build and setup
 
