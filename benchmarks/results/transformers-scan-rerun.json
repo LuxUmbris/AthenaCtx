@@ -1,0 +1,135 @@
+{
+  "repository": "huggingface/transformers",
+  "scope": "src/transformers Python files",
+  "files": 3097,
+  "seconds": 83.191,
+  "files_per_second": 24.714,
+  "results": {
+    "ok": 2056,
+    "unknown_or_invalid": 1009,
+    "nonzero": 0,
+    "json_error": 32
+  },
+  "sample_failures": [
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/activations.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/backbone_utils.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/cache_utils.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/cli/add_new_model_like.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/cli/chat.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/cli/serving/completion.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/cli/serving/model_manager.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/cli/serving/response.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/cli/serving/systemone.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/configuration_utils.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/conversion_mapping.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "json_error",
+      "file": "/tmp/athenactx-transformers/src/transformers/core_model_loading.py",
+      "status": -11,
+      "detail": ""
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/data/data_collator.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/debug_utils.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/distributed/checkpoint.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/distributed/fsdp.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/distributed/mixin.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/distributed/sharding_utils.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/distributed/tensor_parallel.py",
+      "status": 0,
+      "detail": "unknown"
+    },
+    {
+      "category": "unknown_or_invalid",
+      "file": "/tmp/athenactx-transformers/src/transformers/distributed/utils.py",
+      "status": 0,
+      "detail": "unknown"
+    }
+  ]
+}

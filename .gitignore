@@ -3,3 +3,4 @@ vendor/
 .athenactx/
 __pycache__/
 *.pyc
+run_local.py

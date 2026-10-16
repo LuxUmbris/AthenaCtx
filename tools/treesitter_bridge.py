@@ -7,7 +7,7 @@ from tree_sitter import Query, QueryCursor
 FUNCTION_NODES = {
     "function_definition", "function_declaration", "function_item",
     "function_signature_item", "method_definition", "method_declaration",
-    "constructor_declaration", "function", "method",
+    "constructor_declaration", "function", "method", "FnProto",
 }
 CONTAINER_NODES = {
     "class_definition", "class_declaration", "class_specifier", "class",
@@ -26,14 +26,18 @@ def named_child(node, *fields):
 
 
 def name_node(node):
-    name = node.child_by_field_name("name") or node.child_by_field_name("identifier")
+    name = (
+        node.child_by_field_name("name")
+        or node.child_by_field_name("identifier")
+        or node.child_by_field_name("function")
+    )
     if name is not None:
         return name
     declarator = node.child_by_field_name("declarator")
     stack = [declarator] if declarator is not None else list(reversed(node.named_children))
     while stack:
         current = stack.pop()
-        if current.type in ("identifier", "field_identifier", "type_identifier", "property_identifier", "word"):
+        if current.type.lower() in ("identifier", "field_identifier", "type_identifier", "property_identifier", "word"):
             return current
         stack.extend(reversed(current.named_children))
     return None

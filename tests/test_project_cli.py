@@ -1,12 +1,19 @@
 import json
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CLI = ROOT / "athenactx"
+CLI = ROOT / "build" / "athenactx.exe"
+if not CLI.is_file():
+    CLI = ROOT / "build" / "athenactx"
+sys.path[:0] = [str(ROOT / "vendor"), str(ROOT / "tools")]
+import project_cli
 
 
 class ProjectCliTests(unittest.TestCase):
@@ -21,7 +28,21 @@ class ProjectCliTests(unittest.TestCase):
         self.temp.cleanup()
 
     def run_cli(self, *args):
-        return subprocess.run([str(CLI), *map(str, args)], cwd=ROOT, text=True, capture_output=True)
+        command = [str(CLI)]
+        compiler = shutil.which("shaftc")
+        if compiler:
+            command.extend(["--compiler", compiler])
+        command.extend(map(str, args))
+        return subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
+
+    def test_scan_file_records_missing_scanner_json_as_diagnostic(self):
+        path = self.root / "a.py"
+        result = subprocess.CompletedProcess([], -11, stdout="", stderr="")
+        with patch.object(project_cli.subprocess, "run", return_value=result):
+            data = project_cli.scan_file(path, "python")
+        self.assertEqual(data["language"], "python")
+        self.assertTrue(data["diagnostics"])
+        self.assertIn("scanner returned no JSON", data["diagnostics"][0]["message"])
 
     def test_index_links_workspace_definitions_imports_references_and_cache(self):
         first = self.run_cli("index", self.root)
@@ -39,6 +60,79 @@ class ProjectCliTests(unittest.TestCase):
         self.assertTrue(any(r["role"] == "call" for r in refs["references"]))
         again = json.loads(self.run_cli("index", self.root).stdout)
         self.assertGreaterEqual(again["cache"]["hits"], 3)
+
+    def test_scan_imports_follows_local_python_imports_recursively_and_handles_cycles(self):
+        (self.root / "entry.py").write_text("from pkg.first import value\n")
+        (self.root / "pkg").mkdir()
+        (self.root / "pkg" / "__init__.py").write_text("")
+        (self.root / "pkg" / "first.py").write_text(
+            "from pkg.second import answer\nvalue = answer\n"
+        )
+        (self.root / "pkg" / "second.py").write_text("import pkg.first\nanswer = 42\n")
+        (self.root / "unrelated.py").write_text("raise RuntimeError('not part of the closure')\n")
+
+        result = self.run_cli("scan", self.root / "entry.py", "--imports", "--root", self.root)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(set(data["files"]), {
+            "entry.py", "pkg/__init__.py", "pkg/first.py", "pkg/second.py"
+        })
+        self.assertEqual(data["cache"]["misses"], 4)
+        again_result = self.run_cli("scan", self.root / "entry.py", "--imports", "--root", self.root)
+        self.assertEqual(again_result.returncode, 0, again_result.stderr)
+        again = json.loads(again_result.stdout)
+        self.assertEqual(again["cache"]["hits"], 4)
+
+    def test_scan_imports_supports_cross_language_resolvers(self):
+        cases = [
+            ("web/main.js", "import { value } from './lib.js';\n", {
+                "web/lib.js": "export { answer } from './answer.js';\n",
+                "web/answer.js": "export const answer = 42;\n",
+                "web/unused.js": "export const unused = true;\n",
+            }, {"web/main.js", "web/lib.js", "web/answer.js"}),
+            ("rust/main.rs", "mod alpha;\n", {
+                "rust/alpha.rs": "mod beta;\n",
+                "rust/beta.rs": "pub fn value() {}\n",
+                "rust/unused.rs": "pub fn unused() {}\n",
+            }, {"rust/main.rs", "rust/alpha.rs", "rust/beta.rs"}),
+            ("native/main.c", '#include "local.h"\n#include <stdio.h>\n', {
+                "native/local.h": '#include "nested.h"\n',
+                "native/nested.h": "int answer;\n",
+                "native/unused.h": "int unused;\n",
+            }, {"native/main.c", "native/local.h", "native/nested.h"}),
+            ("shaft/main.shaft", 'import "part.shaft";\n', {
+                "shaft/part.shaft": "def answer() -> i32 { 42 }\n",
+                "shaft/unused.shaft": "def unused() -> i32 { 0 }\n",
+            }, {"shaft/main.shaft", "shaft/part.shaft"}),
+        ]
+        for entry, source, dependencies, expected in cases:
+            with self.subTest(entry=entry):
+                (self.root / entry).parent.mkdir(parents=True, exist_ok=True)
+                (self.root / entry).write_text(source)
+                for rel, content in dependencies.items():
+                    path = self.root / rel
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(content)
+                result = self.run_cli("scan", self.root / entry, "--imports", "--root", self.root)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(set(json.loads(result.stdout)["files"]), expected)
+
+    def test_scan_imports_respects_depth_limit(self):
+        (self.root / "entry.py").write_text("import child\n")
+        (self.root / "child.py").write_text("value = 1\n")
+        result = self.run_cli("scan", self.root / "entry.py", "--imports",
+                              "--root", self.root, "--max-depth", "0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["files"], ["entry.py"])
+        self.assertTrue(data["truncated"])
+
+    def test_scan_dot_routes_to_workspace_index(self):
+        result = self.run_cli("scan", ".")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(Path(data["root"]), ROOT)
+        self.assertIn("src/main.shaft", data["files"])
 
     def test_query_filters_symbols_and_calls(self):
         self.run_cli("index", self.root)

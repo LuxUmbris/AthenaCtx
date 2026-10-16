@@ -1,0 +1,65 @@
+{
+  "environment": {
+    "repository": "AthenaCtx",
+    "date": "2026-10-16",
+    "subagent_runtime": "Hermes delegated tasks; each arm got an independent context",
+    "measurement_caveat": "Hermes did not expose per-subagent prompt token totals. Tool-result characters are a lower-bound proxy, not model context usage; transcript logs truncate some oversized tool outputs. Elapsed time and tool-call counts are transcript-derived; worker narrative effort estimates differed and are not used as measurements."
+  },
+  "understanding": {
+    "with_athenactx": {
+      "elapsed_seconds": 84.95,
+      "tool_calls": 31,
+      "logged_tool_result_characters": 10824,
+      "outcome": "Produced a grounded CLI-to-scanner flow and subsystem/limitations summary. Indexed the workspace and used targeted implementation retrieval. The Python project_cli.py scan returned language=unknown / no symbols, so the agent fell back to reading that source directly."
+    },
+    "without_athenactx": {
+      "elapsed_seconds": 82.96,
+      "tool_calls": 14,
+      "logged_tool_result_characters": 5595,
+      "outcome": "Produced a similarly grounded CLI-to-scanner flow and subsystem/limitations summary by reading source/tests directly."
+    },
+    "comparison": "No observed time or tool-output reduction for the AthenaCtx arm in this run. AthenaCtx gave useful navigation on Shaft and the Tree-sitter bridge, but the unsupported project_cli.py scan and extra failed/empty index lookups offset that advantage."
+  },
+  "bugfix": {
+    "fixture": "benchmarks/fixtures/bug-lru",
+    "with_athenactx": {
+      "elapsed_seconds": 43.86,
+      "tool_calls": 14,
+      "logged_tool_result_characters": 5317,
+      "correct_root_cause": true,
+      "correct_patch": true,
+      "correct_verification": true,
+      "outcome": "Identified that a cached False hit fails to refresh OrderedDict recency, causing A to be evicted and reloaded. Proposed an unconditional move_to_end(key) on cache hits."
+    },
+    "without_athenactx": {
+      "elapsed_seconds": 30.99,
+      "tool_calls": 10,
+      "logged_tool_result_characters": 4170,
+      "correct_root_cause": true,
+      "correct_patch": true,
+      "correct_verification": true,
+      "outcome": "Identified the same LRU recency bug and proposed an unconditional recency refresh on hits."
+    },
+    "comparison": "Both arms diagnosed and fixed the seeded LRU defect. AthenaCtx added 12.87 seconds and 4 tool calls in this single run; it did not show an effort reduction."
+  },
+  "bugfix_pilot": {
+    "fixture": "benchmarks/fixtures/bug-cache",
+    "with_athenactx": {
+      "elapsed_seconds": 58.46,
+      "tool_calls": 15,
+      "logged_tool_result_characters": 5088,
+      "correct_root_cause": true,
+      "correct_patch": true,
+      "outcome": "Solved the simple false-value cache miss; initial relative-path scans failed and the agent recovered using explicit paths."
+    },
+    "without_athenactx": {
+      "elapsed_seconds": 25.2,
+      "tool_calls": 7,
+      "logged_tool_result_characters": 2270,
+      "correct_root_cause": true,
+      "correct_patch": true,
+      "outcome": "Solved the same simple false-value cache miss by direct source inspection."
+    },
+    "comparison": "Retained as an initial smoke-test pilot; not used as the primary hard-bug result."
+  }
+}

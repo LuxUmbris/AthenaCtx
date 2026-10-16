@@ -14,6 +14,22 @@ namespace athenactx
             tunnel equal -> bool result;
         }
 
+        def is_windows_executable(std::string::view::View path) -> bool result
+        {
+            mut bool matches = false;
+            if (path.length >= 4)
+            {
+                matches = athenactx::treesitter::view_equal(path.substr(path.length - 4, 4), ".exe");
+            }
+            mut u64 index = 0;
+            while (!matches && index < path.length)
+            {
+                if (path.data[index] == 92) { matches = true; }
+                index = index + 1;
+            }
+            tunnel matches -> bool result;
+        }
+
         def view_contains(std::string::view::View value, std::string::view::View query) -> bool result
         {
             mut bool found = false;
@@ -77,43 +93,44 @@ namespace athenactx
         {
             mut u8 kind = 0;
             if (athenactx::treesitter::view_equal(type, "function_definition") || athenactx::treesitter::view_equal(type, "function_declaration") ||
-                athenactx::treesitter::view_equal(type, "function_item") || athenactx::treesitter::view_equal(type, "function_signature_item") ||
-                athenactx::treesitter::view_equal(type, "method_definition") || athenactx::treesitter::view_equal(type, "method_declaration") ||
-                athenactx::treesitter::view_equal(type, "constructor_declaration") || athenactx::treesitter::view_equal(type, "function") || athenactx::treesitter::view_equal(type, "method")) { kind = 1; }
+            athenactx::treesitter::view_equal(type, "function_item") || athenactx::treesitter::view_equal(type, "function_signature_item") ||
+            athenactx::treesitter::view_equal(type, "method_definition") || athenactx::treesitter::view_equal(type, "method_declaration") ||
+            athenactx::treesitter::view_equal(type, "constructor_declaration") || athenactx::treesitter::view_equal(type, "function") ||
+            athenactx::treesitter::view_equal(type, "method") || athenactx::treesitter::view_equal(type, "FnProto")) { kind = 1; }
             else if (athenactx::treesitter::view_equal(type, "class_definition") || athenactx::treesitter::view_equal(type, "class_declaration") ||
-                athenactx::treesitter::view_equal(type, "class_specifier") || athenactx::treesitter::view_equal(type, "class")) { kind = 2; }
+            athenactx::treesitter::view_equal(type, "class_specifier") || athenactx::treesitter::view_equal(type, "class")) { kind = 2; }
             else if (athenactx::treesitter::view_equal(type, "struct_item") || athenactx::treesitter::view_equal(type, "struct_declaration") ||
-                athenactx::treesitter::view_equal(type, "struct_specifier") || athenactx::treesitter::view_equal(type, "struct_definition") || athenactx::treesitter::view_equal(type, "struct")) { kind = 3; }
+            athenactx::treesitter::view_equal(type, "struct_specifier") || athenactx::treesitter::view_equal(type, "struct_definition") || athenactx::treesitter::view_equal(type, "struct")) { kind = 3; }
             else if (athenactx::treesitter::view_equal(type, "trait_item") || athenactx::treesitter::view_equal(type, "interface_declaration") || athenactx::treesitter::view_equal(type, "interface")) { kind = 4; }
             else if (athenactx::treesitter::view_equal(type, "impl_item") || athenactx::treesitter::view_equal(type, "impl_definition")) { kind = 5; }
             else if (athenactx::treesitter::view_equal(type, "enum_item") || athenactx::treesitter::view_equal(type, "enum_declaration") || athenactx::treesitter::view_equal(type, "enum_specifier")) { kind = 6; }
             else if (athenactx::treesitter::view_equal(type, "union_item") || athenactx::treesitter::view_equal(type, "union_declaration") ||
-                athenactx::treesitter::view_equal(type, "union_specifier") || athenactx::treesitter::view_equal(type, "union_definition")) { kind = 7; }
+            athenactx::treesitter::view_equal(type, "union_specifier") || athenactx::treesitter::view_equal(type, "union_definition")) { kind = 7; }
             else if (athenactx::treesitter::view_equal(type, "macro_definition") || athenactx::treesitter::view_equal(type, "macro_declaration") || athenactx::treesitter::view_equal(type, "macro_rule")) { kind = 8; }
             else if (athenactx::treesitter::view_equal(type, "enum_variant") || athenactx::treesitter::view_equal(type, "enumerator") || athenactx::treesitter::view_equal(type, "enum_member")) { kind = 9; }
             else if (athenactx::treesitter::view_equal(type, "union_variant") || athenactx::treesitter::view_equal(type, "variant")) { kind = 10; }
             else if (athenactx::treesitter::view_equal(type, "field_declaration") || athenactx::treesitter::view_equal(type, "field_definition") || athenactx::treesitter::view_equal(type, "property_declaration")) { kind = 11; }
             else if (athenactx::treesitter::view_contains(type, "enum") &&
-                (athenactx::treesitter::view_contains(type, "variant") || athenactx::treesitter::view_contains(type, "member") || athenactx::treesitter::view_contains(type, "enumerator")) &&
-                !athenactx::treesitter::view_contains(type, "list")) { kind = 9; }
+            (athenactx::treesitter::view_contains(type, "variant") || athenactx::treesitter::view_contains(type, "member") || athenactx::treesitter::view_contains(type, "enumerator")) &&
+            !athenactx::treesitter::view_contains(type, "list")) { kind = 9; }
             else if (athenactx::treesitter::view_contains(type, "union") && athenactx::treesitter::view_contains(type, "variant") &&
-                !athenactx::treesitter::view_contains(type, "list")) { kind = 10; }
+            !athenactx::treesitter::view_contains(type, "list")) { kind = 10; }
             else if ((athenactx::treesitter::view_contains(type, "field") || athenactx::treesitter::view_contains(type, "property")) &&
-                (athenactx::treesitter::view_contains(type, "declaration") || athenactx::treesitter::view_contains(type, "definition") ||
-                    athenactx::treesitter::view_contains(type, "member")) && !athenactx::treesitter::view_contains(type, "list")) { kind = 11; }
+            (athenactx::treesitter::view_contains(type, "declaration") || athenactx::treesitter::view_contains(type, "definition") ||
+            athenactx::treesitter::view_contains(type, "member")) && !athenactx::treesitter::view_contains(type, "list")) { kind = 11; }
             else if ((athenactx::treesitter::view_contains(type, "function") || athenactx::treesitter::view_contains(type, "method") ||
-                athenactx::treesitter::view_contains(type, "procedure") || athenactx::treesitter::view_contains(type, "subroutine")) &&
-                !athenactx::treesitter::view_contains(type, "call") && !athenactx::treesitter::view_contains(type, "type")) { kind = 1; }
+            athenactx::treesitter::view_contains(type, "procedure") || athenactx::treesitter::view_contains(type, "subroutine")) &&
+            !athenactx::treesitter::view_contains(type, "call") && !athenactx::treesitter::view_contains(type, "type")) { kind = 1; }
             else if (athenactx::treesitter::view_contains(type, "interface") || athenactx::treesitter::view_contains(type, "trait")) { kind = 4; }
             else if (athenactx::treesitter::view_contains(type, "struct") && !athenactx::treesitter::view_contains(type, "field") &&
-                !athenactx::treesitter::view_contains(type, "list") && !athenactx::treesitter::view_contains(type, "body")) { kind = 3; }
+            !athenactx::treesitter::view_contains(type, "list") && !athenactx::treesitter::view_contains(type, "body")) { kind = 3; }
             else if (athenactx::treesitter::view_contains(type, "union") && !athenactx::treesitter::view_contains(type, "list") &&
-                !athenactx::treesitter::view_contains(type, "variant") && !athenactx::treesitter::view_contains(type, "field")) { kind = 7; }
+            !athenactx::treesitter::view_contains(type, "variant") && !athenactx::treesitter::view_contains(type, "field")) { kind = 7; }
             else if (athenactx::treesitter::view_contains(type, "enum") && !athenactx::treesitter::view_contains(type, "list") &&
-                !athenactx::treesitter::view_contains(type, "variant") && !athenactx::treesitter::view_contains(type, "member") &&
-                !athenactx::treesitter::view_contains(type, "enumerator")) { kind = 6; }
+            !athenactx::treesitter::view_contains(type, "variant") && !athenactx::treesitter::view_contains(type, "member") &&
+            !athenactx::treesitter::view_contains(type, "enumerator")) { kind = 6; }
             else if (athenactx::treesitter::view_contains(type, "class") && !athenactx::treesitter::view_contains(type, "body") &&
-                !athenactx::treesitter::view_contains(type, "list")) { kind = 2; }
+            !athenactx::treesitter::view_contains(type, "list")) { kind = 2; }
             else if (athenactx::treesitter::view_contains(type, "macro") && !athenactx::treesitter::view_contains(type, "call") && !athenactx::treesitter::view_contains(type, "invocation")) { kind = 8; }
             tunnel kind -> u8 result;
         }
@@ -121,17 +138,17 @@ namespace athenactx
         def is_call(std::string::view::View type) -> bool result
         {
             tunnel athenactx::treesitter::view_equal(type, "call_expression") || athenactx::treesitter::view_equal(type, "call") ||
-                athenactx::treesitter::view_equal(type, "function_call") || athenactx::treesitter::view_equal(type, "method_invocation") ||
-                athenactx::treesitter::view_equal(type, "invocation") || athenactx::treesitter::view_equal(type, "command") ||
-                athenactx::treesitter::view_equal(type, "command_invocation") || athenactx::treesitter::view_contains(type, "call") ||
-                athenactx::treesitter::view_contains(type, "invocation") -> bool result;
+            athenactx::treesitter::view_equal(type, "function_call") || athenactx::treesitter::view_equal(type, "method_invocation") ||
+            athenactx::treesitter::view_equal(type, "invocation") || athenactx::treesitter::view_equal(type, "command") ||
+            athenactx::treesitter::view_equal(type, "command_invocation") || athenactx::treesitter::view_contains(type, "call") ||
+            athenactx::treesitter::view_contains(type, "invocation") -> bool result;
         }
 
         def tag_kind(std::string::view::View tag, std::string::view::View type) -> u8 result
         {
             mut u8 kind = athenactx::treesitter::node_kind(type);
             if (athenactx::treesitter::view_equal(tag, "definition.function") ||
-                athenactx::treesitter::view_equal(tag, "definition.method")) { kind = 1; }
+            athenactx::treesitter::view_equal(tag, "definition.method")) { kind = 1; }
             else if (athenactx::treesitter::view_equal(tag, "definition.interface")) { kind = 4; }
             else if (athenactx::treesitter::view_equal(tag, "definition.macro")) { kind = 8; }
             else if (athenactx::treesitter::view_equal(tag, "definition.constant")) { kind = 12; }
@@ -143,17 +160,26 @@ namespace athenactx
         def has_effect(std::string::view::View name) -> bool result
         {
             tunnel athenactx::treesitter::view_equal(name, "print") || athenactx::treesitter::view_equal(name, "println") || athenactx::treesitter::view_equal(name, "printf") || athenactx::treesitter::view_equal(name, "read") ||
-                athenactx::treesitter::view_equal(name, "write") || athenactx::treesitter::view_equal(name, "open") || athenactx::treesitter::view_equal(name, "close") ||
-                athenactx::treesitter::view_equal(name, "spawn") || athenactx::treesitter::view_equal(name, "exit") || athenactx::treesitter::view_equal(name, "allocate") ||
-                athenactx::treesitter::view_equal(name, "deallocate") || athenactx::treesitter::view_equal(name, "push") -> bool result;
+            athenactx::treesitter::view_equal(name, "write") || athenactx::treesitter::view_equal(name, "open") || athenactx::treesitter::view_equal(name, "close") ||
+            athenactx::treesitter::view_equal(name, "spawn") || athenactx::treesitter::view_equal(name, "exit") || athenactx::treesitter::view_equal(name, "allocate") ||
+            athenactx::treesitter::view_equal(name, "deallocate") || athenactx::treesitter::view_equal(name, "push") -> bool result;
         }
 
-        def run_bridge(std::string::view::View path, std::string::view::View language) -> std::process::Output result
+        def run_bridge(std::string::view::View executable, std::string::view::View path, std::string::view::View language) -> std::process::Output result
         {
-            reserve mut std::process::Command command = std::process::Command::new("/usr/bin/python3");
+            reserve mut std::process::Command command;
+            if (athenactx::treesitter::is_windows_executable(executable))
+            {
+                command = std::process::Command::new("python");
+            }
+            else
+            {
+                command = std::process::Command::new("/usr/bin/env");
+                command.arg("python3");
+            }
             command.arg("-c");
-            command.arg("import runpy,sys;sys.path.insert(0,'vendor');p='tools/treesitter_bridge.py';sys.argv=[p]+sys.argv[2:];runpy.run_path(p,run_name='__main__')");
-            command.arg("tools/treesitter_bridge.py");
+            command.arg("import os,runpy,shutil,sys;exe=sys.argv[1];exe=(os.path.abspath(exe) if os.path.sep in exe else (shutil.which(exe) or '')) if not os.path.isabs(exe) else exe;exe=exe or (os.path.join(os.environ.get('LOCALAPPDATA',os.path.expanduser('~')),'AthenaCtx','bin','athenactx.exe') if os.name=='nt' else os.path.join(os.path.expanduser('~'),'.local','bin','athenactx'));candidate=os.path.abspath(os.path.join(os.path.dirname(exe),'..','lib','athenactx'));root=candidate if os.path.isfile(os.path.join(candidate,'tools','treesitter_bridge.py')) else os.getcwd();p=os.path.join(root,'tools','treesitter_bridge.py');sys.path.insert(0,os.path.join(root,'vendor'));sys.argv=[p]+sys.argv[2:];runpy.run_path(p,run_name='__main__')");
+            command.arg(executable);
             command.arg(path);
             command.arg(language);
             tunnel command.output() -> std::process::Output result;
@@ -181,13 +207,13 @@ namespace athenactx
             tunnel athenactx::diagnostics::json_error(message.get_view(), line, column) -> std::string::String result;
         }
 
-        def scan_file(std::string::view::View path, std::string::view::View source, std::string::view::View requested_language)
+        def scan_file(std::string::view::View executable, std::string::view::View path, std::string::view::View source, std::string::view::View requested_language)
         {
-            reserve std::process::Output parsed = athenactx::treesitter::run_bridge(path, requested_language);
+            reserve std::process::Output parsed = athenactx::treesitter::run_bridge(executable, path, requested_language);
             if (parsed.status != 0)
             {
                 athenactx::treesitter::append_process_error(path, parsed.stderr.get_view());
-                exit(2);
+                std::exit(2);
             }
             reserve std::string::view::View records = parsed.stdout.get_view();
             reserve mut std::string::String symbols = std::string::String::with_capacity(256);
@@ -412,9 +438,9 @@ namespace athenactx
             std::io::println(report.get_view());
         }
 
-        def implementation_file(std::string::view::View path, std::string::view::View source, std::string::view::View requested_signature, std::string::view::View language)
+        def implementation_file(std::string::view::View executable, std::string::view::View path, std::string::view::View source, std::string::view::View requested_signature, std::string::view::View language)
         {
-            reserve std::process::Output parsed = athenactx::treesitter::run_bridge(path, language);
+            reserve std::process::Output parsed = athenactx::treesitter::run_bridge(executable, path, language);
             if (parsed.status == 0)
             {
                 reserve std::string::view::View records = parsed.stdout.get_view();
@@ -466,12 +492,21 @@ namespace athenactx
             exit(2);
         }
 
-        def list_languages()
+        def list_languages(std::string::view::View executable)
         {
-            reserve mut std::process::Command command = std::process::Command::new("/usr/bin/python3");
+            reserve mut std::process::Command command;
+            if (athenactx::treesitter::is_windows_executable(executable))
+            {
+                command = std::process::Command::new("python");
+            }
+            else
+            {
+                command = std::process::Command::new("/usr/bin/env");
+                command.arg("python3");
+            }
             command.arg("-c");
-            command.arg("import runpy,sys;sys.path.insert(0,'vendor');p='tools/treesitter_bridge.py';sys.argv=[p]+sys.argv[2:];runpy.run_path(p,run_name='__main__')");
-            command.arg("tools/treesitter_bridge.py");
+            command.arg("import os,runpy,shutil,sys;exe=sys.argv[1];exe=(os.path.abspath(exe) if os.path.sep in exe else (shutil.which(exe) or '')) if not os.path.isabs(exe) else exe;exe=exe or (os.path.join(os.environ.get('LOCALAPPDATA',os.path.expanduser('~')),'AthenaCtx','bin','athenactx.exe') if os.name=='nt' else os.path.join(os.path.expanduser('~'),'.local','bin','athenactx'));candidate=os.path.abspath(os.path.join(os.path.dirname(exe),'..','lib','athenactx'));root=candidate if os.path.isfile(os.path.join(candidate,'tools','treesitter_bridge.py')) else os.getcwd();p=os.path.join(root,'tools','treesitter_bridge.py');sys.path.insert(0,os.path.join(root,'vendor'));sys.argv=[p]+sys.argv[2:];runpy.run_path(p,run_name='__main__')");
+            command.arg(executable);
             command.arg("--list");
             reserve std::process::Output listed = command.output();
             if (listed.status != 0)

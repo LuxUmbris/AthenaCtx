@@ -1,45 +1,60 @@
 # AthenaCTX
 
-AthenaCTX is a multi-language source indexer with a Shaft CLI and language-specific analyzers.
+AthenaCTX is a multi-language source indexer with a [Shaft](https://github.com/LuxUmbris/Shaft) CLI and language-specific analyzers.
 
 ## Build and setup
 
 ```sh
 ./setup.sh
 shaftc --build Shaft.toml
+python3 install.py
 ```
 
-`setup.sh` installs the pinned Tree-sitter language pack into ignored `vendor/`. The `athenactx` launcher configures the dependency, resolves `shaftc` from `PATH`, and runs `build/athenactx`. First scans download the requested parser grammar, so they need network access. `athenactx languages` lists the 372 grammars in the pinned pack manifest.
+`setup.sh` installs the pinned Tree-sitter language pack into ignored `vendor/`. The build produces the native executable at `build/athenactx`; there is no shell-script CLI launcher. First scans download the requested parser grammar, so they need network access. `build/athenactx languages` lists the 372 grammars in the pinned pack manifest.
+
+`install.py` detects Linux, macOS, or Windows, installs the compiled executable in the user's bin directory, and adds that directory to PATH (Unix shell profile or Windows user PATH). To merge the project instructions into selected agents' global context files, pass one or more integration flags:
 
 ```sh
-./athenactx scan path/to/file.py
-./athenactx scan path/to/file.unknown rust
-./athenactx scan path/to/file.shaft
-./athenactx implementation path/to/file.py 'def render(self) -> str:'
-./athenactx prompt
+python3 install.py --hermes --openclaw --codex --claude-code --opencode
+python3 install.py --repo . --hermes --openclaw --github-copilot --codex --claude-code --opencode
 ```
 
-`scan` auto-detects languages from file extensions; the optional third argument overrides detection. Shaft files use the Shaft-specific analyzer plus `shaftc --check-only` diagnostics when invoked through the launcher. Other files use Tree-sitter. The pack covers 372 grammars, not every third-party grammar ever published outside that pack.
+Without `--repo`, supported integrations use their global instruction locations. `--repo [PATH]` selects project context files instead (no path means the current directory). GitHub Copilot's local instruction file is repository-scoped, so `--github-copilot` requires `--repo`; personal GitHub instructions are managed on GitHub.com and cannot be edited by a local installer. Existing text is preserved and the AthenaCtx-managed block is replaced idempotently.
+
+```sh
+./build/athenactx scan path/to/file.py
+./build/athenactx scan path/to/file.unknown rust
+./build/athenactx --compiler "$(command -v shaftc)" scan path/to/file.shaft
+./build/athenactx implementation path/to/file.py 'def render(self) -> str:'
+./build/athenactx prompt
+```
+
+`scan` auto-detects languages from file extensions; the optional third argument overrides detection. Shaft files use the Shaft-specific analyzer plus `shaftc --check-only` diagnostics when invoked with `--compiler "$(command -v shaftc)"`. Other files use Tree-sitter. The pack covers 372 grammars, not every third-party grammar ever published outside that pack.
 
 ## Workspace features
 
 ```sh
-./athenactx index .                         # Project index; cached in .athenactx/index.json
-./athenactx scan .                          # Alias for workspace indexing
-./athenactx references render --root .       # Syntactic references across indexed files
-./athenactx query --root . --kind function --name render
-./athenactx query --root . --caller main --callee render --diagnostics
-./athenactx rename render render_view --root .  # Preview only
-./athenactx rename render render_view --root . --apply
-./athenactx capabilities python
-./athenactx watch --root .                   # Poll and update changed-file cache entries
-./athenactx diff --root . --base HEAD
-./athenactx lsp --root .                     # LSP over Content-Length framed stdio
+./build/athenactx index .                         # Project index; cached in .athenactx/index.json
+./build/athenactx scan .                          # Alias for workspace indexing
+./build/athenactx scan path/to/main.py --imports --root . # Entry file plus recursive local imports
+./build/athenactx references render --root .       # Syntactic references across indexed files
+./build/athenactx query --root . --kind function --name render
+./build/athenactx query --root . --caller main --callee render --diagnostics
+./build/athenactx rename render render_view --root .  # Preview only
+./build/athenactx rename render render_view --root . --apply
+./build/athenactx capabilities python
+./build/athenactx watch --root .                   # Poll and update changed-file cache entries
+./build/athenactx diff --root . --base HEAD
+./build/athenactx lsp --root .                     # LSP over Content-Length framed stdio
 ```
 
 The project index skips common generated/dependency directories, caches each file's scan using its content fingerprint, and only re-scans changed files. It emits symbols, syntactic references, parser diagnostics, import links, and cache statistics as stable JSON. `references` and `rename` use exact identifier tokens where a syntax inventory is available; rename is a preview unless `--apply` is given. These are name-based syntactic matches, not compiler-resolved references, so review rename previews before applying them.
 
-`capabilities LANGUAGE` reports parser availability, whether the pinned pack has declaration tags, and whether extraction is tagged or heuristic. Parsing support does not imply semantic correctness. The LSP currently supports initialize/shutdown, full-document open/change synchronization, definition, references, rename edits, document symbols, and workspace symbols. It uses the same syntactic index and makes no type-resolution guarantee. Start it from an editor using `./athenactx lsp --root /path/to/workspace` with stdio transport.
+Command selection and dispatch live in `src/main.shaft`; invoke the compiled native executable directly at `build/athenactx`. The established workspace index/query engine and Tree-sitter bridge remain Python-backed (`tools/project_cli.py` and `tools/treesitter_bridge.py`); the native CLI invokes those for their existing analysis operations.
+
+`scan DIRECTORY` is the one-command recursive workspace scan. `scan FILE --imports` instead follows the file's local import closure and scans only reachable files, using the same per-file cache. `--root` bounds resolution (defaults to the entry file's directory); `--max-depth` and `--max-files` cap traversal. Current resolver adapters cover Python, JavaScript/TypeScript, Rust, C/C++, Java/Kotlin/Scala, and Shaft. Resolution is syntax-based and language-specific; external packages and imports that cannot be mapped to a file inside the root are reported as unresolved, not downloaded or scanned. Output includes compact symbols/calls/diagnostics, import edges, cache counts, and a truncation flag.
+
+`capabilities LANGUAGE` reports parser availability, whether the pinned pack has declaration tags, and whether extraction is tagged or heuristic. Parsing support does not imply semantic correctness. The LSP currently supports initialize/shutdown, full-document open/change synchronization, definition, references, rename edits, document symbols, and workspace symbols. It uses the same syntactic index and makes no type-resolution guarantee. Start it from an editor using `./build/athenactx lsp --root /path/to/workspace` with stdio transport.
 
 `diff` combines Git's changed-file list with files changed since the last cached index; its summary includes symbols in affected files, matching call sites elsewhere, and diagnostics. `watch` is a polling mode; set `--interval SECONDS` to change its default one-second interval, or `--once` to perform one update check and exit.
 
@@ -75,4 +90,4 @@ python3 -m unittest discover -s tests -v
 
 The tests cover Shaft structs/enums/unions/macros and compiler errors, Python/Rust/JavaScript/Bash/C scans, exact implementation requests, parser diagnostics, workspace links/references/cache/query/rename, diff/watch behavior, LSP framing/live-document updates, and the grammar registry.
 
-The longer agent prompt is in `SYSTEM_PROMPT.md`; `./athenactx prompt` prints its concise runtime form.
+The longer agent prompt is in `SYSTEM_PROMPT.md`; `./build/athenactx prompt` prints its concise runtime form.

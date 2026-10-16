@@ -1,0 +1,57 @@
+{
+  "model": "spark-96k:latest",
+  "understanding": {
+    "without_athenactx": {
+      "context_chars": 120545,
+      "prompt_eval_count": 31467,
+      "eval_count": 929,
+      "done_reason": "stop",
+      "wall_seconds": 113.697,
+      "response": "**CLI-to-Analysis Data Flow**\n\n1.  **Entry Point (`athenactx`):** This shell script parses the first argument. For `scan`, it delegates to `tools/project_cli.py index`. For other commands (`index`, `lsp`, etc.), it directly executes `tools/project_cli.py`. If `shaftc` is found, it uses it as a compiler for `scan` commands.\n2.  **Workspace Indexing (`tools/project_cli.py`):** The `index` command creates a `Workspace` object. It calls `supported_files()` to discover source files, then for each file, it calls `scan_file()`.\n3.  **File Scanning (`scan_file`):** This function invokes the CLI binary with a `scan` command. The CLI (`src/main.shaft`) reads the file, identifies its language, and calls the appropriate analyzer (`scan_shaft` for `.shaft` files, `treesitter::scan_file` for others). The analyzer produces a JSON report containing symbols, calls, effects, and diagnostics.\n4.  **Analysis & Caching (`Workspace`):** The `Workspace` object stores the scan results in a cache file (`.athenactx/index.json`). It also builds a workspace index by linking symbols and calls across files using `make_references()` and `_link_imports()`.\n5.  **Command Execution:** Other commands like `query`, `references`, `rename`, and `lsp` use the pre-built `Workspace` object to filter, edit, or serve the indexed data.\n\n**Major Subsystem Files and Roles**\n\n*   **`src/main.shaft`:** The CLI entry point. It handles command-line argument parsing, dispatches to language-specific analyzers (`scan_shaft`, `treesitter::scan_file`), and manages the overall execution flow.\n*   **`src/shaft.shaft`:** The dedicated analyzer for the `.shaft` language. It performs structural parsing (braces, signatures, calls) and generates the JSON report for `.shaft` files.\n*   **`src/treesitter.shaft`:** The generic analyzer for other languages (Python, Rust, JS, etc.). It uses the `tree_sitter` library via a bridge (`tools/treesitter_bridge.py`) to parse files and extract symbols, calls, and diagnostics.\n*   **`tools/project_cli.py`:** The project-level CLI implementation. It orchestrates the workspace indexing, caching, and provides commands like `index`, `query`, `lsp`, and `watch`.\n*   **`tools/treesitter_bridge.py`:** A bridge script that interfaces with the `tree_sitter` library. It parses source files and emits tab-separated records for the `treesitter.shaft` analyzer.\n\n**Strongest Implementation Limitations**\n\n1.  **Language-Specific Parsing:** The `.shaft` analyzer (`src/shaft.shaft`) is a hand-written parser. This is a significant limitation, as it is not generic and cannot handle syntax errors or edge cases that the `tree_sitter` library would handle for other languages.\n2.  **Limited Tree-Sitter Grammar Support:** The `treesitter_bridge.py` relies on a `tree_sitter_language_pack` for grammars. The `node_kind` function in `src/treesitter.shaft` uses a hardcoded list of node types, which may not cover all possible node types or variations in the grammars, leading to potential misclassification.\n3.  **Syntactic-Only Analysis:** The core analysis is syntactic. The `scan_file` functions in `src/treesitter.shaft` and `src/shaft.shaft` do not perform semantic analysis. This means the tool cannot guarantee the correctness of code beyond syntax, as evidenced by the `capabilities` command reporting \"no semantic guarantee\".\n4.  **Dependence on External Compiler:** For `.shaft` files, the `scan_shaft` function in `src/main.shaft` depends on an external `shaftc` compiler (`athenactx` script). If the compiler is not available, the analysis fails, which is a critical dependency."
+    },
+    "with_athenactx": {
+      "context_chars": 38056,
+      "prompt_eval_count": 11223,
+      "eval_count": 859,
+      "done_reason": "stop",
+      "wall_seconds": 49.919,
+      "response": "### CLI-to-Analysis Data Flow\n1. **Entry**: `setup.sh` parses CLI args, locates `shaftc` (if present), sets `PYTHONPATH`, and dispatches to either `tools/project_cli.py` (for index/scan commands) or `build/athenactx` (the compiled Shaft binary).\n2. **Binary Dispatch**: `src/main.shaft` `main` parses args: extracts `--compiler` path, validates required source file, routes commands (`scan`, `implementation`, `prompt`, `languages`) to corresponding handlers.\n3. **Shaft Scan**: For `scan`, `main` calls `scan_shaft` (in `src/shaft.shaft`) for `.shaft` files, or `treesitter.scan_file` (in `src/treesitter.shaft`) for other languages.\n4. **Treesitter Bridge**: `src/treesitter.shaft` `scan_file`/`implementation_file` invoke `tools/treesitter_bridge.py` functions (e.g., `tag_records`, `emit_node`) to parse source into AST nodes.\n5. **Diagnostics**: `src/diagnostics.shaft` `json_error`/`json_raw_error` format errors; `src/treesitter.shaft` `node_diagnostic` converts AST nodes to diagnostic strings.\n6. **Output**: Results are printed via `std::io::println`/`eprintln` or returned as JSON for CLI output.\n\n### Major Subsystem Files & Roles\n- **`src/main.shaft`**: CLI entry point; arg parsing, command routing, and orchestration of scan/implementation flows.\n- **`src/shaft.shaft`**: Shaft-specific parsing; functions like `scan_shaft` (full Shaft source analysis), `struct_fields`/`aggregate_members` (struct member extraction), `scan_calls` (call scanning).\n- **`src/treesitter.shaft`**: Cross-language parsing; `scan_file`/`implementation_file` (language-agnostic AST scanning), `run_bridge` (invokes Python bridge), `node_diagnostic` (diagnostic formatting).\n- **`tools/treesitter_bridge.py`**: Python bridge to Tree-sitter; functions like `tag_records` (extracts language tags), `emit_node` (emits AST nodes for Shaft).\n- **`src/diagnostics.shaft`**: Error handling; `json_error`/`json_raw_error` (JSON error formatting for diagnostics).\n- **`tools/project_cli.py`**: Python CLI for index/scan commands; executes project-level operations (indexing, querying).\n\n### Strongest Implementation Limitations\n1. **Tunnel Function Restriction**: `src/shaft.shaft` enforces Shaft's tunnel-based function syntax (e.g., `tunnel equal -> bool result;`), disallowing `return` in tunnel functions. Evidence: `invalid.shaft` test error explicitly states `'return' is not allowed in a tunnel-based function`.\n2. **Malformed Source Rejection**: `src/shaft.shaft` `braces_balanced`/`matching_brace` functions reject unbalanced braces, causing `tests/malformed.shaft` to fail with \"unclosed or unmatched brace\" errors. Evidence: `malformed.shaft` test error confirms unterminated struct declarations are rejected.\n3. **Exact Signature Requirement for Implementation**: `src/main.shaft` `main` enforces exact function signature matching for `implementation` commands, preventing partial body requests. Evidence: `test_implementation_requires_exact_signature` test validates this requirement.\n4. **Python Import Resolution Limitation**: `tests/fixture.py`/`test_cli.py` show syntactic-only import resolution (confidence: \"syntactic\"), with no resolved targets, indicating incomplete Python import handling."
+    }
+  },
+  "bugfix_pilot": {
+    "without_athenactx": {
+      "context_chars": 1007,
+      "prompt_eval_count": 392,
+      "eval_count": 163,
+      "done_reason": "stop",
+      "wall_seconds": 7.189,
+      "response": "```diff\n--- a/benchmarks/fixtures/bug-cache/cache.py\n+++ b/benchmarks/fixtures/bug-cache/cache.py\n@@ -1,12 +1,12 @@\n class Memo:\n     def __init__(self):\n         self.values = {}\n \n     def get(self, key, loader):\n-        value = self.values.get(key)\n+        value = self.values.get(key, None)\n         if value:\n             return value\n-        value = loader()\n+        value = loader() if value is None else value\n         self.values[key] = value\n         return value\n```\n\n```bash\npython benchmarks/fixtures/bug-cache/check.py\n```"
+    },
+    "with_athenactx": {
+      "context_chars": 2564,
+      "prompt_eval_count": 901,
+      "eval_count": 135,
+      "done_reason": "stop",
+      "wall_seconds": 5.958,
+      "response": "```diff\n--- a/benchmarks/fixtures/bug-cache/cache.py\n+++ b/benchmarks/fixtures/bug-cache/cache.py\n@@ -5,10 +5,10 @@ class Memo:\n     def get(self, key, loader):\n         value = self.values.get(key)\n         if value:\n             return value\n-        value = loader()\n+        value = loader() if value is None else value\n         self.values[key] = value\n         return value\n```\n\n```bash\npython benchmarks/fixtures/bug-cache/check.py\n```"
+    }
+  },
+  "bugfix": {
+    "without_athenactx": {
+      "context_chars": 1342,
+      "prompt_eval_count": 483,
+      "eval_count": 105,
+      "done_reason": "stop",
+      "wall_seconds": 4.872,
+      "response": "```diff\n--- a/benchmarks/fixtures/bug-lru/cache.py\n+++ b/benchmarks/fixtures/bug-lru/cache.py\n@@\n     def get(self, key, loader):\n         if key in self.values:\n             value = self.values[key]\n-            if value:\n+            self.values.move_to_end(key)\n             self.values.move_to_end(key)\n             return value\n```\n\n```bash\npython check.py\n```"
+    },
+    "with_athenactx": {
+      "context_chars": 3206,
+      "prompt_eval_count": 1098,
+      "eval_count": 121,
+      "done_reason": "stop",
+      "wall_seconds": 6.05,
+      "response": "```diff\n--- a/benchmarks/fixtures/bug-lru/cache.py\n+++ b/benchmarks/fixtures/bug-lru/cache.py\n@@ -10,7 +10,7 @@ class Memo:\n     def get(self, key, loader):\n         if key in self.values:\n             value = self.values[key]\n-            if value:\n+            self.values.move_to_end(key)\n             return value\n```\n\n```bash\npython benchmarks/fixtures/bug-lru/check.py\n```"
+    }
+  }
+}

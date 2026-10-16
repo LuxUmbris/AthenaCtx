@@ -25,6 +25,89 @@ namespace athenactx
         }
         tunnel matches -> bool result;
     }
+
+    def has_extension(std::string::view::View path) -> bool result
+    {
+        mut u64 index = path.length;
+        mut bool found = false;
+        mut bool stopped = false;
+        mut bool basename_has_character = false;
+        while (index > 0 && !stopped)
+        {
+            index = index - 1;
+            if (path.data[index] == '.')
+            {
+                found = basename_has_character;
+                stopped = true;
+            }
+            else if (path.data[index] == '/' || path.data[index] == '\\')
+            {
+                stopped = true;
+            }
+            else
+            {
+                basename_has_character = true;
+            }
+        }
+        tunnel found -> bool result;
+    }
+
+    def is_windows_executable(std::string::view::View path) -> bool result
+    {
+        mut bool matches = false;
+        if (path.length >= 4)
+        {
+            matches = athenactx::same_view(path.substr(path.length - 4, 4), ".exe");
+        }
+        mut u64 index = 0;
+        while (!matches && index < path.length)
+        {
+            if (path.data[index] == 92) { matches = true; }
+            index = index + 1;
+        }
+        tunnel matches -> bool result;
+    }
+
+    def run_project_cli(std::string::String[] args, u64 offset, u8 mode) -> i32 status
+    {
+        reserve mut std::process::Command command;
+        if (athenactx::is_windows_executable(args[0].get_view()))
+        {
+            command = std::process::Command::new("python");
+        }
+        else
+        {
+            command = std::process::Command::new("/usr/bin/env");
+            command.arg("python3");
+        }
+        command.arg("-c");
+        command.arg("import os,runpy,shutil,sys;exe=sys.argv[1];exe=(os.path.abspath(exe) if os.path.sep in exe or '\\\\' in exe else (shutil.which(exe) or '')) if not os.path.isabs(exe) else exe;exe=exe or (os.path.join(os.environ.get('LOCALAPPDATA',os.path.expanduser('~')),'AthenaCtx','bin','athenactx.exe') if os.name=='nt' else os.path.join(os.path.expanduser('~'),'.local','bin','athenactx'));candidate=os.path.abspath(os.path.join(os.path.dirname(exe),'..','lib','athenactx'));root=candidate if os.path.isfile(os.path.join(candidate,'tools','project_cli.py')) else os.getcwd();p=os.path.join(root,'tools','project_cli.py');sys.path[:0]=[os.path.join(root,'vendor'),os.path.join(root,'tools')];os.environ['ATHENACTX_BIN']=exe;sys.argv=[p]+sys.argv[2:];runpy.run_path(p,run_name='__main__')");
+        command.arg(args[0].get_view());
+        mut u64 index = offset + 1;
+        if (mode == 1)
+        {
+            command.arg("index");
+            command.arg(args[offset + 1].get_view());
+            index = offset + 2;
+        }
+        else if (mode == 2)
+        {
+            command.arg("imports");
+            command.arg(args[offset + 1].get_view());
+            index = offset + 3;
+        }
+        else
+        {
+            command.arg(args[offset].get_view());
+        }
+        while (index < args.length)
+        {
+            command.arg(args[index].get_view());
+            index = index + 1;
+        }
+        reserve mut std::process::Child child = command.spawn();
+        tunnel child.wait() -> i32 status;
+    }
 }
 
 def main(std::string::String[] args)
@@ -38,8 +121,8 @@ def main(std::string::String[] args)
     }
     if (args.length <= offset)
     {
-        std::io::eprintln("Usage: athenactx scan FILE [LANGUAGE] | implementation FILE SIGNATURE [LANGUAGE] | prompt | languages");
-        exit(2);
+        std::io::eprintln("Usage: athenactx scan FILE [LANGUAGE] | scan DIRECTORY | scan FILE --imports [OPTIONS] | index|references|query|rename|watch|diff|lsp ... | implementation FILE SIGNATURE [LANGUAGE] | prompt | languages");
+        std::exit(2);
     }
     reserve std::string::String command = args[offset];
     if (athenactx::same_view(command.get_view(), "prompt"))
@@ -49,13 +132,50 @@ def main(std::string::String[] args)
     }
     if (athenactx::same_view(command.get_view(), "languages"))
     {
-        athenactx::treesitter::list_languages();
+        athenactx::treesitter::list_languages(args[0].get_view());
+        terminate;
+    }
+    if (athenactx::same_view(command.get_view(), "capabilities") &&
+    args.length > offset + 1 && athenactx::same_view(args[offset + 1].get_view(), "shaft"))
+    {
+        std::io::println("{\"calls\": \"dedicated analyzer\", \"declaration_extraction\": \"dedicated analyzer\", \"declaration_tags\": false, \"diagnostics\": \"Shaft compiler and structural diagnostics\", \"language\": \"shaft\", \"parser\": true, \"references\": \"syntactic declarations and calls\", \"syntax_inventory\": false}");
+        terminate;
+    }
+    if (athenactx::same_view(command.get_view(), "index") ||
+    athenactx::same_view(command.get_view(), "references") ||
+    athenactx::same_view(command.get_view(), "rename") ||
+    athenactx::same_view(command.get_view(), "query") ||
+    athenactx::same_view(command.get_view(), "watch") ||
+    athenactx::same_view(command.get_view(), "capabilities") ||
+    athenactx::same_view(command.get_view(), "diff") ||
+    athenactx::same_view(command.get_view(), "lsp") ||
+    athenactx::same_view(command.get_view(), "imports"))
+    {
+        mut i32 project_status = athenactx::run_project_cli(args, offset, 0);
+        if (project_status != 0) { std::exit(project_status); }
         terminate;
     }
     if (args.length <= offset + 1)
     {
         std::io::eprintln("A source file is required.");
         exit(2);
+    }
+    if (athenactx::same_view(command.get_view(), "scan"))
+    {
+        if (args.length > offset + 2 && athenactx::same_view(args[offset + 2].get_view(), "--imports"))
+        {
+            mut i32 import_status = athenactx::run_project_cli(args, offset, 2);
+            if (import_status != 0) { exit(import_status); }
+            terminate;
+        }
+        if (!athenactx::has_extension(args[offset + 1].get_view()) &&
+        (args.length <= offset + 2 || athenactx::same_view(args[offset + 2].get_view(), "--force") ||
+        athenactx::same_view(args[offset + 2].get_view(), "--root")))
+        {
+            mut i32 index_status = athenactx::run_project_cli(args, offset, 1);
+            if (index_status != 0) { exit(index_status); }
+            terminate;
+        }
     }
     reserve std::string::String contents = std::filesystem::read(args[offset + 1].get_view());
     reserve std::string::view::View source = contents.get_view();
@@ -68,7 +188,7 @@ def main(std::string::String[] args)
             if (!scan_shaft(args[offset + 1].get_view(), source, compiler_path)) { exit(2); }
             terminate;
         }
-        athenactx::treesitter::scan_file(args[offset + 1].get_view(), source, language);
+        athenactx::treesitter::scan_file(args[0].get_view(), args[offset + 1].get_view(), source, language);
         terminate;
     }
     if (athenactx::same_view(command.get_view(), "implementation"))
@@ -85,9 +205,9 @@ def main(std::string::String[] args)
             implementation_shaft(source, args[offset + 2].get_view());
             terminate;
         }
-        athenactx::treesitter::implementation_file(args[offset + 1].get_view(), source, args[offset + 2].get_view(), language);
+        athenactx::treesitter::implementation_file(args[0].get_view(), args[offset + 1].get_view(), source, args[offset + 2].get_view(), language);
         terminate;
     }
     std::io::eprintln("Unknown command.");
-    exit(2);
+    std::exit(2);
 }

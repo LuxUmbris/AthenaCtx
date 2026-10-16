@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,9 +17,13 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import tree_sitter_language_pack as pack
+from import_resolvers import resolver_for
 
 ROOT = Path(__file__).resolve().parents[1]
-SCANNER = ROOT / "athenactx"
+DEFAULT_SCANNER = ROOT / "build" / "athenactx.exe"
+if not DEFAULT_SCANNER.is_file():
+    DEFAULT_SCANNER = ROOT / "build" / "athenactx"
+SCANNER = Path(os.environ.get("ATHENACTX_BIN", DEFAULT_SCANNER))
 SKIP_DIRS = {".git", ".athenactx", "build", "dist", "node_modules", "vendor", ".venv", "venv", "__pycache__"}
 IDENTIFIER_TYPES = {"identifier", "type_identifier", "field_identifier", "property_identifier", "word"}
 
@@ -28,16 +33,35 @@ def json_out(value):
 
 
 def scan_file(path: Path, language: str | None = None):
-    args = [str(SCANNER), "scan", str(path)]
+    args = [str(SCANNER)]
+    compiler = shutil.which("shaftc")
+    if compiler:
+        args.extend(["--compiler", compiler])
+    args.extend(["scan", str(path)])
     if language:
         args.append(language)
     result = subprocess.run(args, cwd=ROOT, text=True, capture_output=True)
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(result.stderr.strip() or f"scanner failed for {path}: {exc}") from exc
+        detected = language or pack.detect_language_from_path(str(path)) or "unknown"
+        detail = result.stderr.strip() or f"scanner returned no JSON ({exc})"
+        data = {
+            "file": str(path), "language": detected, "symbols": [], "calls": [],
+            "effects": [], "diagnostics": [{"severity": "error", "message": detail,
+            "line": 1, "column": 1}], "syntax": [],
+        }
+        return data
     if result.returncode not in (0, 2):
-        raise RuntimeError(result.stderr.strip() or f"scanner failed for {path}")
+        data.setdefault("diagnostics", []).append({
+            "severity": "error", "message": result.stderr.strip() or f"scanner exited with status {result.returncode}",
+            "line": 1, "column": 1,
+        })
+    if language and data.get("language") == "unknown":
+        data.setdefault("diagnostics", []).append({
+            "severity": "error", "message": f"scanner returned unknown language for requested {language}",
+            "line": 1, "column": 1,
+        })
     data["file"] = str(path)
     return data
 
@@ -214,6 +238,113 @@ class Workspace:
         self.references = [ref for ref in self.references if Path(ref["file"]).resolve() != path]
         self.references.extend(make_references(scan, source))
         self._link_imports()
+
+
+def scan_imports_command(args):
+    root = Path(args.root).resolve() if args.root else Path(args.entry).resolve().parent
+    entry = Path(args.entry).resolve()
+    if not entry.is_relative_to(root) or not entry.is_file():
+        raise ValueError("entry file must exist inside the selected root")
+
+    cache_file = cache_path(root)
+    try:
+        cache = json.loads(cache_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        cache = {"version": 1, "files": {}}
+    cached_files = cache.get("files", {})
+    updated_files = dict(cached_files)
+    scans = {}
+    sources = {}
+    languages = {}
+    imports = []
+    unresolved = []
+    queue = [(entry, 0)]
+    queued = {entry}
+    cache_hits = 0
+    cache_misses = 0
+    truncated = False
+
+    while queue:
+        path, depth = queue.pop(0)
+        path = path.resolve()
+        queued.discard(path)
+        if not path.is_relative_to(root):
+            continue
+        rel = path.relative_to(root).as_posix()
+        if rel in scans:
+            continue
+        language = "shaft" if path.suffix == ".shaft" else pack.detect_language_from_path(str(path))
+        if not language or (language != "shaft" and not pack.has_language(language)):
+            unresolved.append({"file": rel,
+                               "specifier": None, "reason": "unsupported source language"})
+            continue
+
+        mark = fingerprint(path)
+        old = cached_files.get(rel)
+        if old and old.get("fingerprint") == mark:
+            scan = old["scan"]
+            cache_hits += 1
+        else:
+            scan = scan_file(path, language)
+            cache_misses += 1
+        updated_files[rel] = {"fingerprint": mark, "scan": scan}
+        scans[rel] = scan
+        sources[rel] = path.read_text(encoding="utf-8", errors="replace")
+        languages[rel] = language
+
+        resolver = resolver_for(language)
+        if resolver is None:
+            unresolved.append({"file": rel, "specifier": None,
+                               "reason": f"no import resolver for {language}"})
+            continue
+        for specifier in dict.fromkeys(resolver.extract(sources[rel], path, root)):
+            targets = []
+            for target in resolver.resolve(specifier, path, root):
+                target = target.resolve()
+                target_language = "shaft" if target.suffix == ".shaft" else pack.detect_language_from_path(str(target))
+                if target_language and (target_language == "shaft" or pack.has_language(target_language)):
+                    targets.append(target)
+            if not targets:
+                unresolved.append({"file": rel, "specifier": specifier,
+                                   "reason": "not found inside root"})
+                continue
+            for target in targets:
+                target_rel = target.relative_to(root).as_posix()
+                imports.append({"from": rel, "specifier": specifier,
+                                "to": target_rel, "resolved": True,
+                                "confidence": "language resolver"})
+                if target in scans or target in queued:
+                    continue
+                if depth >= args.max_depth or len(scans) + len(queue) >= args.max_files:
+                    truncated = True
+                    continue
+                queue.append((target, depth + 1))
+                queued.add(target)
+
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    temp = cache_file.with_suffix(".tmp")
+    temp.write_text(json.dumps({"version": 1, "files": updated_files}, ensure_ascii=False),
+                    encoding="utf-8")
+    temp.replace(cache_file)
+
+    files = sorted(scans)
+    json_out({
+        "root": str(root),
+        "entry": entry.relative_to(root).as_posix(),
+        "files": files,
+        "scans": [{"file": rel, "language": languages[rel],
+                   "symbols": scans[rel].get("symbols", []),
+                   "calls": scans[rel].get("calls", []),
+                   "effects": scans[rel].get("effects", []),
+                   "diagnostics": scans[rel].get("diagnostics", [])}
+                  for rel in files],
+        "references": [ref for rel in files
+                       for ref in make_references(scans[rel], sources[rel])],
+        "imports": imports,
+        "unresolved_imports": unresolved,
+        "cache": {"hits": cache_hits, "misses": cache_misses},
+        "truncated": truncated,
+    })
 
 
 def index_command(args):
@@ -491,6 +622,11 @@ def parser():
     index = sub.add_parser("index", help="index a workspace and cache per-file scans")
     index.add_argument("root", nargs="?", default=root_default)
     index.add_argument("--force", action="store_true")
+    imports = sub.add_parser("imports", help="scan an entry file and its local import closure")
+    imports.add_argument("entry")
+    imports.add_argument("--root")
+    imports.add_argument("--max-depth", type=int, default=32)
+    imports.add_argument("--max-files", type=int, default=256)
     refs = sub.add_parser("references", help="find syntactic workspace references")
     refs.add_argument("symbol")
     refs.add_argument("--root", default=root_default)
@@ -526,6 +662,10 @@ def main():
     try:
         if args.command == "index":
             index_command(args)
+        elif args.command == "imports":
+            if args.max_depth < 0 or args.max_files < 1:
+                raise ValueError("--max-depth must be non-negative and --max-files must be positive")
+            scan_imports_command(args)
         elif args.command == "references":
             references_command(args)
         elif args.command == "query":

@@ -1,10 +1,16 @@
 import json
+import os
+import shutil
 import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BIN = ROOT / "athenactx"
+BIN = ROOT / "build" / "athenactx.exe"
+if not BIN.is_file():
+    BIN = ROOT / "build" / "athenactx"
 FIXTURE = ROOT / "tests" / "fixture.shaft"
 MALFORMED = ROOT / "tests" / "malformed.shaft"
 INVALID = ROOT / "tests" / "invalid.shaft"
@@ -14,11 +20,41 @@ RUST_FIXTURE = ROOT / "tests" / "fixture.rs"
 JS_FIXTURE = ROOT / "tests" / "fixture.js"
 BASH_FIXTURE = ROOT / "tests" / "fixture.sh"
 C_FIXTURE = ROOT / "tests" / "fixture.c"
+ZIG_FIXTURE = ROOT / "tests" / "fixture.zig"
 
 
 class AthenaCtxCliTests(unittest.TestCase):
     def run_cli(self, *args):
-        return subprocess.run([str(BIN), *map(str, args)], text=True, capture_output=True, cwd=ROOT)
+        command = [str(BIN)]
+        compiler = shutil.which("shaftc")
+        if compiler:
+            command.extend(["--compiler", compiler])
+        command.extend(map(str, args))
+        return subprocess.run(command, text=True, capture_output=True, cwd=ROOT)
+
+    def test_shaft_capabilities_does_not_require_python_backend(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            command = [str(BIN)]
+            compiler = shutil.which("shaftc")
+            if compiler:
+                command.extend(["--compiler", compiler])
+            command.extend(["capabilities", "shaft"])
+            result = subprocess.run(command, text=True, capture_output=True, cwd=temp_dir)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(result.stdout),
+            {
+                "calls": "dedicated analyzer",
+                "declaration_extraction": "dedicated analyzer",
+                "declaration_tags": False,
+                "diagnostics": "Shaft compiler and structural diagnostics",
+                "language": "shaft",
+                "parser": True,
+                "references": "syntactic declarations and calls",
+                "syntax_inventory": False,
+            },
+        )
 
     def test_shaft_scan_reports_members_errors_and_hides_bodies(self):
         result = self.run_cli("scan", FIXTURE)
@@ -94,18 +130,70 @@ class AthenaCtxCliTests(unittest.TestCase):
         self.assertTrue(any(s["kind"] == "field" and s["container"] == "Value" and s["name"] == "number" for s in data["symbols"]))
         self.assertEqual(data["diagnostics"], [])
 
+    def test_tree_sitter_scans_zig_function_declarations(self):
+        result = self.run_cli("scan", ZIG_FIXTURE)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["language"], "zig")
+        self.assertTrue(any(s["kind"] == "function" and s["name"] == "answer" for s in data["symbols"]))
+        self.assertEqual(data["diagnostics"], [])
+
+    def test_index_includes_c_and_zig_sources(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            shutil.copy(C_FIXTURE, root / "sample.c")
+            shutil.copy(ZIG_FIXTURE, root / "sample.zig")
+            result = self.run_cli("index", root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["files"], ["sample.c", "sample.zig"])
+        self.assertTrue(any(s["file"] == "sample.zig" and s["name"] == "answer" for s in data["symbols"]))
+        self.assertTrue(any(s["file"] == "sample.c" and s["name"] == "Color" for s in data["symbols"]))
+        self.assertEqual(data["diagnostics"], [])
+
     def test_tree_sitter_lists_supported_grammars_and_returns_python_body(self):
         result = self.run_cli("languages")
         self.assertEqual(result.returncode, 0, result.stderr)
         languages = result.stdout.splitlines()
         self.assertGreaterEqual(len(languages), 300)
-        self.assertTrue({"python", "javascript", "rust"}.issubset(languages))
+        self.assertTrue({"python", "javascript", "rust", "zig", "c"}.issubset(languages))
         body = self.run_cli("implementation", PYTHON_FIXTURE, "def render(self) -> str:")
         self.assertEqual(body.returncode, 0, body.stderr)
         self.assertIn("return helper(self.value)", body.stdout)
         rust_body = self.run_cli("implementation", RUST_FIXTURE, "fn helper(value: i32) -> i32")
         self.assertEqual(rust_body.returncode, 0, rust_body.stderr)
         self.assertIn("value", rust_body.stdout)
+
+    def test_vendored_tree_sitter_parses_every_manifest_grammar(self):
+        env = os.environ.copy()
+        vendor = str(ROOT / "vendor")
+        env["PYTHONPATH"] = os.pathsep.join(filter(None, [vendor, env.get("PYTHONPATH", "")]))
+        script = """
+import sys
+import tree_sitter_language_pack as pack
+
+languages = pack.manifest_languages()
+failures = []
+for language in languages:
+    try:
+        pack.get_parser(language).parse(b"")
+    except Exception as error:
+        failures.append(f"{language}: {error}")
+print(f"{len(languages)} grammars, {len(failures)} failures")
+if failures:
+    print("\\n".join(failures), file=sys.stderr)
+    raise SystemExit(1)
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            text=True,
+            capture_output=True,
+            cwd=ROOT,
+            env=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("372 grammars, 0 failures", result.stdout)
 
     def test_implementation_request_returns_exact_body(self):
         result = self.run_cli("implementation", FIXTURE, "def async lookup(u64 id) -> u64 result")
